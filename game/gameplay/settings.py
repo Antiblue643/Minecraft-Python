@@ -185,7 +185,7 @@ class GameSettings:
         self.render_distance = 1
         self.view_bobbing = True
         self.anaglyph = False
-        self.limit_framerate = True
+        self.limit_framerate = False
         self.difficulty = 2
         self.fancy_graphics = True
         self.texture_pack = "vanilla"
