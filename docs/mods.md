@@ -103,9 +103,4 @@ name, description, and all declared settings labels. External mods should do
 the same; manifest `name` and `description` are only fallback text if the
 mod's language file is missing. Mod item/block definitions registered during
 `initialize(game)` are automatically tagged with the owning mod ID, so their
-inventory tooltips are looked up in that mod's language file. The base
-`game/lang/<locale>.lang` is reserved for strings belonging to the Python
-recreation itself; do not put vanilla Minecraft item/block names or another
-mod's strings there. Vanilla strings should use keys already present in
-`texturepacks/vanilla/lang/en_US.lang`; that Java-compatible file is preserved
-byte-for-byte by this recreation.
+inventory tooltips are looked up in that mod's language file.
