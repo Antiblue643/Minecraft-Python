@@ -6,7 +6,7 @@
 - NumPy and Numba
 - A graphics environment with OpenGL support
 
-The project uses Pygame CE, PyOpenGL, and `nbtlib` for world saves. `requirements.txt` also includes PyInstaller for building a packaged executable. The Cython chunk extension is optional and is not required to run the game.
+The project uses Pygame CE, PyOpenGL, and `nbtlib` for world saves. The Cython chunk extension is optional and is not required to run the game.
 
 ## Run from source
 

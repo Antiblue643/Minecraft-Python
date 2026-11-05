@@ -10,15 +10,13 @@ Minecraft Python is a Python recreation of the `beta` Minecraft experience.
 
 ## Features
 
-- Java-accurate worlds with chunk loading and world saving.
+- Java-accurate (90% sure) worlds with chunk loading and world saving.
 - Exploration, block breaking and placement, and an inventory with crafting.
 - Survival gameplay, including health, damage, respawning, and hostile and passive creatures.
 - Gameplay systems including fluids, furnaces, chests, signs, doors, redstone, and minecarts.
-- Day and night cycles, weather, particles, music, and sounds.
-- Configurable controls, graphics, audio, difficulty, and render distance.
-- Performance logging and optional Cython acceleration for the chunk module.
+- Day and night cycles, particles, music, and sounds.
 - Experimental proprietary multiplayer with a dedicated server module.
-- Save format compatibility between Java and Python.
+- Save format compatibility (also 90% sure) between Java and Python.
 - Mod and texture pack support, including six built-in mods.
 - The Nether dimension (singleplayer for now).
 

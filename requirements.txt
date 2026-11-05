@@ -1,6 +1,5 @@
 pygame-ce
 PyOpenGL
-pyinstaller
 
 nbtlib==1.12.1
 
