@@ -1,0 +1,9 @@
+# Eval
+mod.name=Eval
+mod.description=(Safely) evaluate python in chat!
+command.usage=Usage: /eval <script> | /eval vars | /eval clear
+command.variablesCleared=Variables cleared
+command.noVariables=No variables set
+command.importsNotAllowed=Really? Imports?
+command.evalError=eval error: %s
+command.ok=OK

@@ -1,0 +1,21 @@
+# Herobrine
+mod.name=Herobrine
+mod.description=A mysterious presence!
+settings.force_enable=Force spawn
+settings.spawn_odds=World odds (1 in N)
+settings.spawn_cooldown=Cooldown (sec)
+settings.mode_stalk=Stalk mode
+settings.mode_jumpscare=Jumpscare mode
+settings.mode_charge=Charge mode
+settings.mode_creaking=Creaking mode
+settings.act_doors=Toggle doors/levers
+settings.act_leaves=Strip leaves
+settings.act_footsteps=Footsteps
+settings.act_music_fade=Fade music
+settings.act_glowing_eyes=Glowing eyes
+settings.skin_null=Null skin
+settings.skin_copy_player=Copy player skin
+settings.prop_torch=Leave torch
+settings.prop_sign=Leave sign
+settings.prop_jukebox=Leave jukebox
+settings.prop_damage=Deal damage

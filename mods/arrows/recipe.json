@@ -1,0 +1,18 @@
+{
+  "corruptor_arrow": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "w": "diamond",
+        "x": "golden_apple",
+        "y": "stick",
+        "z": "feather"
+      },
+      "shape": [
+        "wxw",
+        "#y#",
+        "#z#"
+      ],
+      "amount": 8
+    }
+}

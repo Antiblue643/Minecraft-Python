@@ -1,0 +1,17 @@
+# Creative Mode strings.
+mod.name=Creative Mode
+mod.description=A taste of beta 1.8.
+screen.itemSelection=Item selection
+settings.flight_speed=Flight speed
+settings.give_stacks=Give
+settings.noclip=Noclip
+settings.give_stacks.stack=Give: STACK
+settings.give_stacks.one=Give: ONE
+worldSelect.gamemodeCreative=Gamemode: CREATIVE
+worldSelect.gamemodeSurvival=Gamemode: SURVIVAL
+worldSelect.newWorlds=(new worlds)
+worldSelect.openError=Could not open World %s: %s
+debug.timeMidnight=Time set to midnight
+debug.timeNoon=Time set to noon
+debug.dayCyclePaused=Day cycle paused
+debug.dayCycleResumed=Day cycle resumed

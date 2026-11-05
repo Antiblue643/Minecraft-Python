@@ -1,0 +1,9 @@
+{
+  "id": "arrows",
+  "name": "Corruptor Arrows",
+  "version": "1.0",
+  "description": "Scramble your world!",
+  "entry": "mod.py",
+  "default_enabled": false,
+  "content_heavy": true
+}

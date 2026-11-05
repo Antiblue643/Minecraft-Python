@@ -1,0 +1,9 @@
+{
+  "id": "eval",
+  "name": "Eval",
+  "version": "1.0",
+  "description": "(Safely) evaluate python in chat!",
+  "entry": "mod.py",
+  "default_enabled": true,
+  "multiplayer_compatible": true
+}

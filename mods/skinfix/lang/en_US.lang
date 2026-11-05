@@ -1,0 +1,9 @@
+# Skin Fix
+mod.name=Skin Fix
+mod.description=Modern-day skin support.
+settings.hat=Hat
+settings.jacket=Jacket
+settings.left_sleeve=Left sleeve
+settings.right_sleeve=Right sleeve
+settings.left_pants=Left pants leg
+settings.right_pants=Right pants leg

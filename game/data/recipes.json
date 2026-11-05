@@ -1,0 +1,1375 @@
+{
+  "recipes": {
+    "chest": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "xxx",
+        "x#x",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "furnace": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone"
+      },
+      "shape": [
+        "xxx",
+        "x#x",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "crafting_table": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "xx",
+        "xx"
+      ],
+      "amount": 1
+    },
+    "planks": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "x": "log"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 4
+    },
+    "stick": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "x",
+        "x"
+      ],
+      "amount": 4
+    },
+    "torch": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "coal",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y"
+      ],
+      "amount": 4
+    },
+    "wooden_pickaxe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "stick"
+      },
+      "shape": [
+        "xxx",
+        "#y#",
+        "#y#"
+      ],
+      "amount": 1
+    },
+    "wooden_shovel": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y",
+        "y"
+      ],
+      "amount": 1
+    },
+    "wooden_axe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "xy",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "wooden_hoe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "#y",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "wooden_sword": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "stone_pickaxe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone",
+        "y": "stick"
+      },
+      "shape": [
+        "xxx",
+        "#y#",
+        "#y#"
+      ],
+      "amount": 1
+    },
+    "stone_shovel": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y",
+        "y"
+      ],
+      "amount": 1
+    },
+    "stone_axe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "xy",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "stone_hoe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "#y",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "stone_sword": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "iron_pickaxe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "xxx",
+        "#y#",
+        "#y#"
+      ],
+      "amount": 1
+    },
+    "iron_shovel": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y",
+        "y"
+      ],
+      "amount": 1
+    },
+    "iron_axe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "xy",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "iron_hoe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "#y",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "iron_sword": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "diamond_pickaxe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond",
+        "y": "stick"
+      },
+      "shape": [
+        "xxx",
+        "#y#",
+        "#y#"
+      ],
+      "amount": 1
+    },
+    "diamond_shovel": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y",
+        "y"
+      ],
+      "amount": 1
+    },
+    "diamond_axe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "xy",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "diamond_hoe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "#y",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "diamond_sword": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "gold_pickaxe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "xxx",
+        "#y#",
+        "#y#"
+      ],
+      "amount": 1
+    },
+    "gold_shovel": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y",
+        "y"
+      ],
+      "amount": 1
+    },
+    "gold_axe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "xy",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "gold_hoe": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "xx",
+        "#y",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "gold_sword": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "bow": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "stick",
+        "y": "string"
+      },
+      "shape": [
+        "#xy",
+        "x#y",
+        "#xy"
+      ],
+      "amount": 1
+    },
+    "arrow": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "flint",
+        "y": "stick",
+        "z": "feather"
+      },
+      "shape": [
+        "x",
+        "y",
+        "z"
+      ],
+      "amount": 4
+    },
+    "gold_block": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot"
+      },
+      "shape": [
+        "xxx",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "gold_ingot_from_gold_block": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "x": "gold_block"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 9,
+      "result": "gold_ingot"
+    },
+    "iron_block": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "xxx",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "iron_ingot_from_iron_block": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "x": "iron_block"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 9,
+      "result": "iron_ingot"
+    },
+    "diamond_block": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond"
+      },
+      "shape": [
+        "xxx",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "diamond_from_diamond_block": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "x": "diamond_block"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 9,
+      "result": "diamond"
+    },
+    "mushroom_stew": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "brown_mushroom",
+        "y": "red_mushroom",
+        "z": "bowl"
+      },
+      "shape": [
+        "y",
+        "x",
+        "z"
+      ],
+      "amount": 1
+    },
+    "mushroom_stew_alt": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "red_mushroom",
+        "y": "brown_mushroom",
+        "z": "bowl"
+      },
+      "shape": [
+        "y",
+        "x",
+        "z"
+      ],
+      "amount": 1,
+      "result": "mushroom_stew"
+    },
+    "bread": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "wheat"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "leather_helmet": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "leather"
+      },
+      "shape": [
+        "xxx",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "leather_chestplate": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "leather"
+      },
+      "shape": [
+        "x#x",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "leather_leggings": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "leather"
+      },
+      "shape": [
+        "xxx",
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "leather_boots": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "leather"
+      },
+      "shape": [
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "chainmail_helmet": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "fire"
+      },
+      "shape": [
+        "xxx",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "chainmail_chestplate": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "fire"
+      },
+      "shape": [
+        "x#x",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "chainmail_leggings": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "fire"
+      },
+      "shape": [
+        "xxx",
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "chainmail_boots": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "fire"
+      },
+      "shape": [
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "iron_helmet": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "xxx",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "iron_chestplate": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "x#x",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "iron_leggings": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "xxx",
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "iron_boots": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "diamond_helmet": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond"
+      },
+      "shape": [
+        "xxx",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "diamond_chestplate": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond"
+      },
+      "shape": [
+        "x#x",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "diamond_leggings": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond"
+      },
+      "shape": [
+        "xxx",
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "diamond_boots": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "diamond"
+      },
+      "shape": [
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "gold_helmet": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot"
+      },
+      "shape": [
+        "xxx",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "gold_chestplate": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot"
+      },
+      "shape": [
+        "x#x",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "gold_leggings": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot"
+      },
+      "shape": [
+        "xxx",
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "gold_boots": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_ingot"
+      },
+      "shape": [
+        "x#x",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "wool": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "string"
+      },
+      "shape": [
+        "xxx",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "tnt": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gunpowder",
+        "y": "sand"
+      },
+      "shape": [
+        "xyx",
+        "yxy",
+        "xyx"
+      ],
+      "amount": 1
+    },
+    "stone_slab": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 3
+    },
+    "ladder": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "stick"
+      },
+      "shape": [
+        "x#x",
+        "xxx",
+        "x#x"
+      ],
+      "amount": 1
+    },
+    "wooden_door": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "xx",
+        "xx",
+        "xx"
+      ],
+      "amount": 1
+    },
+    "sign": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "stick"
+      },
+      "shape": [
+        "xxx",
+        "xxx",
+        "#y#"
+      ],
+      "amount": 1
+    },
+    "bowl": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "x#x",
+        "#x#"
+      ],
+      "amount": 4
+    },
+    "rail": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot",
+        "y": "stick"
+      },
+      "shape": [
+        "x#x",
+        "xyx",
+        "x#x"
+      ],
+      "amount": 16
+    },
+    "minecart": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "x#x",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "bucket": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "x#x",
+        "#x#"
+      ],
+      "amount": 1
+    },
+    "flint_and_steel": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot",
+        "y": "flint"
+      },
+      "shape": [
+        "x#",
+        "#y"
+      ],
+      "amount": 1
+    },
+    "stairs": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "x##",
+        "xx#",
+        "xxx"
+      ],
+      "amount": 4
+    },
+    "cobblestone_stairs": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone"
+      },
+      "shape": [
+        "x##",
+        "xx#",
+        "xxx"
+      ],
+      "amount": 4
+    },
+    "painting": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "stick",
+        "y": "wool"
+      },
+      "shape": [
+        "xxx",
+        "xyx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "golden_apple": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "gold_block",
+        "y": "apple"
+      },
+      "shape": [
+        "xxx",
+        "xyx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "iron_ingot": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "iron_ore"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1
+    },
+    "gold_ingot": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "gold_ore"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1
+    },
+    "cooked_porkchop": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "raw_porkchop"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1
+    },
+    "coal_from_ore": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "coal_ore"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1,
+      "result": "coal"
+    },
+    "diamond_from_ore": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "diamond_ore"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1,
+      "result": "diamond"
+    },
+    "lever": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "stick",
+        "y": "cobblestone"
+      },
+      "shape": [
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "stone_pressure_plate": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "stone"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "wooden_pressure_plate": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "iron_door": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "iron_ingot"
+      },
+      "shape": [
+        "xx",
+        "xx",
+        "xx"
+      ],
+      "amount": 1
+    },
+    "redstone_torch": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "redstone",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "stone_button": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "stone"
+      },
+      "shape": [
+        "x",
+        "x"
+      ],
+      "amount": 1
+    },
+    "snow_block": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "snowball"
+      },
+      "shape": [
+        "xx",
+        "xx"
+      ],
+      "amount": 1
+    },
+    "boat": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "x#x",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "clay_block": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "clay"
+      },
+      "shape": [
+        "xx",
+        "xx"
+      ],
+      "amount": 1
+    },
+    "paper": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "reeds"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 3
+    },
+    "book": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "paper"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "bookshelf": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "book"
+      },
+      "shape": [
+        "xxx",
+        "yyy",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "bricks": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "brick"
+      },
+      "shape": [
+        "xx",
+        "xx"
+      ],
+      "amount": 1
+    },
+    "brick": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "clay"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1
+    },
+    "jukebox": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks",
+        "y": "diamond"
+      },
+      "shape": [
+        "xxx",
+        "xyx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "chest_minecart": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "chest",
+        "y": "minecart"
+      },
+      "shape": [
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "furnace_minecart": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "furnace",
+        "y": "minecart"
+      },
+      "shape": [
+        "x",
+        "y"
+      ],
+      "amount": 1
+    },
+    "fence": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "stick"
+      },
+      "shape": [
+        "xxx",
+        "xxx"
+      ],
+      "amount": 2
+    },
+    "compass": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "i": "iron_ingot",
+        "r": "redstone"
+      },
+      "shape": [
+        " i ",
+        "iri",
+        " i "
+      ],
+      "amount": 1
+    },
+    "glowstone": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "glowstone_dust"
+      },
+      "shape": [
+        "xxx",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "jack_o_lantern": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "p": "pumpkin",
+        "t": "torch"
+      },
+      "shape": [
+        "p",
+        "t"
+      ],
+      "amount": 1
+    },
+    "clock": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "g": "gold_ingot",
+        "r": "redstone"
+      },
+      "shape": [
+        " g ",
+        "grg",
+        " g "
+      ],
+      "amount": 1
+    },
+    "fishing_rod": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "s": "stick",
+        "t": "string"
+      },
+      "shape": [
+        "  s",
+        " st",
+        "s t"
+      ],
+      "amount": 1
+    },
+    "cooked_fish": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "raw_fish"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "item": {
+      "legacy_id": "Item"
+    },
+    "arrow": {
+      "legacy_id": "Arrow"
+    },
+    "painting": {
+      "legacy_id": "Painting"
+    },
+    "mob": {
+      "legacy_id": "Mob"
+    },
+    "monster": {
+      "legacy_id": "Monster"
+    },
+    "slime": {
+      "legacy_id": "Slime"
+    },
+    "creeper": {
+      "legacy_id": "Creeper"
+    },
+    "skeleton": {
+      "legacy_id": "Skeleton"
+    },
+    "spider": {
+      "legacy_id": "Spider"
+    },
+    "giant": {
+      "legacy_id": "Giant"
+    },
+    "zombie": {
+      "legacy_id": "Zombie"
+    },
+    "zombie_pigman": {
+      "legacy_id": "PigZombie"
+    },
+    "ghast": {
+      "legacy_id": "Ghast"
+    },
+    "fireball": {
+      "legacy_id": "Fireball"
+    },
+    "pig": {
+      "legacy_id": "Pig"
+    },
+    "sheep": {
+      "legacy_id": "Sheep"
+    },
+    "cow": {
+      "legacy_id": "Cow"
+    },
+    "primed_tnt": {
+      "legacy_id": "PrimedTnt"
+    },
+    "falling_block": {
+      "legacy_id": "FallingSand"
+    },
+    "minecart": {
+      "legacy_id": "Minecart"
+    },
+    "boat": {
+      "legacy_id": "Boat"
+    },
+    "chicken": {
+      "legacy_id": "Chicken"
+    }
+  }
+}

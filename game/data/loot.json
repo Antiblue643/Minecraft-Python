@@ -1,0 +1,162 @@
+{
+    "block_drop_replacements": {
+        "stone": "cobblestone",
+        "grass_block": "dirt",
+        "farmland": "dirt",
+        "coal_ore": "coal",
+        "diamond_ore": "diamond",
+        "stairs": "planks",
+        "cobblestone_stairs": "cobblestone",
+        "double_stone_slab": "stone_slab",
+        "furnace_lit": "furnace",
+        "wall_sign": "sign",
+        "redstone_wire": "redstone",
+        "unlit_redstone_torch": "redstone_torch",
+        "snow": "snowball",
+        "reed": "reeds",
+        "glowstone": "glowstone_dust"
+    },
+    "blocks_that_drop_nothing": [
+        "glass",
+        "bookshelf",
+        "tnt",
+        "fire",
+        "mob_spawner",
+        "water",
+        "lava",
+        "ice"
+    ],
+    "conditional_drops": {
+        "leaves": {
+            "rule": "one_in_n",
+            "denominator": 16,
+            "success_item": "sapling",
+            "fallback_item": null
+        },
+        "gravel": {
+            "rule": "one_in_n",
+            "denominator": 10,
+            "success_item": "flint",
+            "fallback_item": "gravel"
+        },
+        "crops": {
+            "rule": "minimum_metadata",
+            "minimum": 7,
+            "success_item": "wheat",
+            "fallback_item": null
+        },
+        "wooden_door": {
+            "rule": "bit_clear",
+            "bit": 8,
+            "success_item": "wooden_door",
+            "fallback_item": null
+        },
+        "redstone_ore": {
+            "rule": "random_count",
+            "item": "redstone",
+            "minimum": 4,
+            "maximum": 5
+        },
+        "redstone_ore_lit": {
+            "rule": "random_count",
+            "item": "redstone",
+            "minimum": 4,
+            "maximum": 5
+        },
+        "iron_door": {
+            "rule": "bit_clear",
+            "bit": 8,
+            "success_item": "iron_door",
+            "fallback_item": null
+        },
+        "snow_block": {
+            "rule": "random_count",
+            "item": "snowball",
+            "minimum": 4,
+            "maximum": 4
+        },
+        "clay_block": {
+            "rule": "random_count",
+            "item": "clay",
+            "minimum": 4,
+            "maximum": 4
+        }
+    },
+    "harvest_levels": {
+        "none": 0,
+        "wood": 1,
+        "stone": 2,
+        "iron": 3,
+        "diamond": 4
+    },
+    "tool_break_wear": {
+        "tool": 1,
+        "melee_weapon": 2
+    },
+    "dungeon_loot": {
+        "roll_bound": 11,
+        "entries": [
+            {
+                "roll": 0,
+                "item": "saddle",
+                "count": 1
+            },
+            {
+                "roll": 1,
+                "item": "iron_ingot",
+                "count_min": 1,
+                "count_max": 4
+            },
+            {
+                "roll": 2,
+                "item": "bread",
+                "count": 1
+            },
+            {
+                "roll": 3,
+                "item": "wheat",
+                "count_min": 1,
+                "count_max": 4
+            },
+            {
+                "roll": 4,
+                "item": "gunpowder",
+                "count_min": 1,
+                "count_max": 4
+            },
+            {
+                "roll": 5,
+                "item": "string",
+                "count_min": 1,
+                "count_max": 4
+            },
+            {
+                "roll": 6,
+                "item": "bucket",
+                "count": 1
+            },
+            {
+                "roll": 7,
+                "item": "redstone",
+                "count_min": 1,
+                "count_max": 4
+            },
+            {
+                "roll": 8,
+                "item": "golden_apple",
+                "count": 1,
+                "secondary_bound": 100,
+                "secondary_roll": 0
+            },
+            {
+                "roll": 9,
+                "items": [
+                    "record_13",
+                    "record_cat"
+                ],
+                "secondary_bound": 10,
+                "secondary_roll": 0
+            }
+        ]
+    }
+}

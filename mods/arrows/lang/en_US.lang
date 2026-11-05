@@ -1,0 +1,5 @@
+# Corruptor Arrows strings.
+mod.name=Corruptor Arrows
+mod.description=Scramble your world!
+item.corruptor_arrow.name=Corruptor Arrow
+settings.radius=Corruption radius

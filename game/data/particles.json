@@ -1,0 +1,78 @@
+{
+  "fluid_block_types": [
+    "water",
+    "flowing_water",
+    "stationary_water",
+    "lava",
+    "flowing_lava",
+    "stationary_lava"
+  ],
+  "rain": {
+    "surface_y": 64,
+    "radius": 4,
+    "attempts": 50
+  },
+  "spawn_types": {
+    "snowballpoof": {
+      "class": "SnowballPoofParticle",
+      "arguments": "motion"
+    },
+    "slime": {
+      "class": "SlimeParticle",
+      "arguments": "motion"
+    },
+    "smoke": {
+      "class": "SmokeParticle",
+      "arguments": "position",
+      "kwargs": {
+        "scale": 1.0
+      }
+    },
+    "largesmoke": {
+      "class": "SmokeParticle",
+      "arguments": "position",
+      "kwargs": {
+        "scale": 2.5
+      }
+    },
+    "bubble": {
+      "class": "BubbleParticle",
+      "arguments": "motion"
+    },
+    "splash": {
+      "class": "SplashParticle",
+      "arguments": "motion"
+    },
+    "rain": {
+      "class": "RainParticle",
+      "arguments": "position"
+    },
+    "flame": {
+      "class": "FlameParticle",
+      "arguments": "motion"
+    },
+    "portal": {
+      "class": "PortalParticle",
+      "arguments": "motion"
+    },
+    "lava": {
+      "class": "LavaParticle",
+      "arguments": "position"
+    },
+    "explode": {
+      "class": "ExplosionParticle",
+      "arguments": "motion"
+    },
+    "reddust": {
+      "class": "RedstoneDustParticle",
+      "arguments": "motion",
+      "kwargs": {
+        "power": 1.0
+      }
+    },
+    "snow": {
+      "class": "SnowParticle",
+      "arguments": "position"
+    }
+  }
+}

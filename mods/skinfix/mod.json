@@ -1,0 +1,9 @@
+{
+  "id": "skinfix",
+  "name": "Skin Fix",
+  "version": "1.0",
+  "description": "Modern-day skin support.",
+  "entry": "mod.py",
+  "default_enabled": false,
+  "multiplayer_compatible": true
+}

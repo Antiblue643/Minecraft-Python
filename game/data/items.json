@@ -1,0 +1,759 @@
+{
+  "items": {
+    "apple": {
+      "texture": 10,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 4,
+      "id": 260
+    },
+    "arrow": {
+      "texture": 37,
+      "type": "generic",
+      "hold": "generic",
+      "id": 262
+    },
+    "boat": {
+      "texture": 136,
+      "type": "vehicle",
+      "hold": "generic",
+      "stack": 1,
+      "id": 333
+    },
+    "book": {
+      "texture": 59,
+      "type": "generic",
+      "hold": "generic",
+      "id": 340
+    },
+    "bow": {
+      "texture": 21,
+      "type": "ranged_weapon",
+      "hold": "generic",
+      "stack": 1,
+      "id": 261
+    },
+    "bowl": {
+      "texture": 71,
+      "type": "generic",
+      "hold": "generic",
+      "id": 281
+    },
+    "bread": {
+      "texture": 41,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 5,
+      "id": 297
+    },
+    "brick": {
+      "texture": 22,
+      "type": "generic",
+      "hold": "generic",
+      "id": 336
+    },
+    "bucket": {
+      "texture": 74,
+      "type": "bucket",
+      "hold": "generic",
+      "stack": 1,
+      "id": 325
+    },
+    "chainmail_boots": {
+      "texture": 49,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 3,
+      "armor_level": 1,
+      "material": "chain",
+      "id": 305
+    },
+    "chainmail_chestplate": {
+      "texture": 17,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 1,
+      "armor_level": 1,
+      "material": "chain",
+      "id": 303
+    },
+    "chainmail_helmet": {
+      "texture": 1,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 0,
+      "armor_level": 1,
+      "material": "chain",
+      "id": 302
+    },
+    "chainmail_leggings": {
+      "texture": 33,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 2,
+      "armor_level": 1,
+      "material": "chain",
+      "id": 304
+    },
+    "clay": {
+      "texture": 57,
+      "type": "generic",
+      "hold": "generic",
+      "id": 337
+    },
+    "coal": {
+      "texture": 7,
+      "type": "fuel",
+      "hold": "generic",
+      "fueltime": 1200,
+      "id": 263
+    },
+    "cooked_porkchop": {
+      "texture": 88,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 8,
+      "id": 320
+    },
+    "diamond": {
+      "texture": 55,
+      "type": "generic",
+      "hold": "generic",
+      "id": 264
+    },
+    "diamond_axe": {
+      "texture": 115,
+      "material": "diamond",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "axe",
+      "level": 4,
+      "id": 279
+    },
+    "diamond_boots": {
+      "texture": 51,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 3,
+      "armor_level": 3,
+      "material": "diamond",
+      "id": 313
+    },
+    "diamond_chestplate": {
+      "texture": 19,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 1,
+      "armor_level": 3,
+      "material": "diamond",
+      "id": 311
+    },
+    "diamond_helmet": {
+      "texture": 3,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 0,
+      "armor_level": 3,
+      "material": "diamond",
+      "id": 310
+    },
+    "diamond_hoe": {
+      "texture": 131,
+      "material": "diamond",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "hoe",
+      "level": 4,
+      "id": 293
+    },
+    "diamond_leggings": {
+      "texture": 35,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 2,
+      "armor_level": 3,
+      "material": "diamond",
+      "id": 312
+    },
+    "diamond_pickaxe": {
+      "texture": 99,
+      "material": "diamond",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "pickaxe",
+      "level": 4,
+      "id": 278
+    },
+    "diamond_shovel": {
+      "texture": 83,
+      "material": "diamond",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "shovel",
+      "level": 4,
+      "id": 277
+    },
+    "diamond_sword": {
+      "texture": 67,
+      "material": "diamond",
+      "type": "melee_weapon",
+      "hold": "tool",
+      "damage": 10,
+      "id": 276
+    },
+    "feather": {
+      "texture": 24,
+      "type": "generic",
+      "hold": "generic",
+      "id": 288
+    },
+    "flint": {
+      "texture": 6,
+      "type": "generic",
+      "hold": "generic",
+      "id": 318
+    },
+    "flint_and_steel": {
+      "texture": 5,
+      "type": "tool",
+      "hold": "generic",
+      "tooltype": "igniter",
+      "level": 0,
+      "stack": 1,
+      "durability": 64,
+      "id": 259
+    },
+    "gold_axe": {
+      "texture": 116,
+      "material": "gold",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "axe",
+      "level": 1.5,
+      "id": 286
+    },
+    "gold_boots": {
+      "texture": 52,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 3,
+      "armor_level": 1,
+      "material": "gold",
+      "id": 317
+    },
+    "gold_chestplate": {
+      "texture": 20,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 1,
+      "armor_level": 1,
+      "material": "gold",
+      "id": 315
+    },
+    "gold_helmet": {
+      "texture": 4,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 0,
+      "armor_level": 1,
+      "material": "gold",
+      "id": 314
+    },
+    "gold_hoe": {
+      "texture": 132,
+      "material": "gold",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "hoe",
+      "level": 1,
+      "id": 294
+    },
+    "gold_ingot": {
+      "texture": 39,
+      "type": "generic",
+      "hold": "generic",
+      "id": 266
+    },
+    "gold_leggings": {
+      "texture": 36,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 2,
+      "armor_level": 1,
+      "material": "gold",
+      "id": 316
+    },
+    "gold_pickaxe": {
+      "texture": 100,
+      "material": "gold",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "pickaxe",
+      "level": 1.5,
+      "id": 285
+    },
+    "gold_shovel": {
+      "texture": 84,
+      "material": "gold",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "shovel",
+      "level": 1.5,
+      "id": 284
+    },
+    "gold_sword": {
+      "texture": 68,
+      "material": "gold",
+      "type": "melee_weapon",
+      "hold": "tool",
+      "damage": 4,
+      "id": 283
+    },
+    "golden_apple": {
+      "texture": 11,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 42,
+      "id": 322
+    },
+    "gunpowder": {
+      "texture": 40,
+      "type": "generic",
+      "hold": "generic",
+      "id": 289
+    },
+    "iron_axe": {
+      "texture": 114,
+      "material": "iron",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "axe",
+      "level": 3,
+      "id": 258,
+      "aliases": [
+        "axe"
+      ]
+    },
+    "iron_boots": {
+      "texture": 50,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 3,
+      "armor_level": 2,
+      "material": "iron",
+      "id": 309
+    },
+    "iron_chestplate": {
+      "texture": 18,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 1,
+      "armor_level": 2,
+      "material": "iron",
+      "id": 307
+    },
+    "iron_helmet": {
+      "texture": 2,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 0,
+      "armor_level": 2,
+      "material": "iron",
+      "id": 306
+    },
+    "iron_hoe": {
+      "texture": 130,
+      "material": "iron",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "hoe",
+      "level": 3,
+      "id": 292
+    },
+    "iron_ingot": {
+      "texture": 23,
+      "type": "generic",
+      "hold": "generic",
+      "id": 265
+    },
+    "iron_leggings": {
+      "texture": 34,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 2,
+      "armor_level": 2,
+      "material": "iron",
+      "id": 308
+    },
+    "iron_pickaxe": {
+      "texture": 98,
+      "material": "iron",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "pickaxe",
+      "level": 3,
+      "id": 257,
+      "aliases": [
+        "pickaxe"
+      ]
+    },
+    "iron_shovel": {
+      "texture": 82,
+      "material": "iron",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "shovel",
+      "level": 3,
+      "id": 256,
+      "aliases": [
+        "shovel"
+      ]
+    },
+    "iron_sword": {
+      "texture": 66,
+      "material": "iron",
+      "type": "melee_weapon",
+      "hold": "tool",
+      "damage": 8,
+      "id": 267
+    },
+    "lava_bucket": {
+      "texture": 76,
+      "type": "bucket",
+      "hold": "generic",
+      "stack": 1,
+      "block": "lava",
+      "id": 327
+    },
+    "leather": {
+      "texture": 103,
+      "type": "generic",
+      "hold": "generic",
+      "id": 334
+    },
+    "leather_boots": {
+      "texture": 48,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 3,
+      "armor_level": 0,
+      "material": "leather",
+      "id": 301
+    },
+    "leather_chestplate": {
+      "texture": 16,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 1,
+      "armor_level": 0,
+      "material": "leather",
+      "id": 299
+    },
+    "leather_helmet": {
+      "texture": 0,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 0,
+      "armor_level": 0,
+      "material": "leather",
+      "id": 298
+    },
+    "leather_leggings": {
+      "texture": 32,
+      "type": "armor",
+      "hold": "generic",
+      "slot": 2,
+      "armor_level": 0,
+      "material": "leather",
+      "id": 300
+    },
+    "milk_bucket": {
+      "texture": 77,
+      "type": "generic",
+      "hold": "generic",
+      "stack": 1,
+      "id": 335
+    },
+    "minecart": {
+      "texture": 135,
+      "type": "vehicle",
+      "hold": "generic",
+      "stack": 1,
+      "id": 328
+    },
+    "mushroom_stew": {
+      "texture": 72,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 10,
+      "returns": "bowl",
+      "stack": 1,
+      "id": 282
+    },
+    "painting": {
+      "texture": 26,
+      "type": "decoration",
+      "hold": "generic",
+      "stack": 64,
+      "id": 321
+    },
+    "paper": {
+      "texture": 58,
+      "type": "generic",
+      "hold": "generic",
+      "id": 339
+    },
+    "raw_porkchop": {
+      "texture": 87,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 3,
+      "id": 319
+    },
+    "redstone": {
+      "texture": 56,
+      "type": "generic",
+      "hold": "generic",
+      "id": 331,
+      "block": "redstone_wire"
+    },
+    "reeds": {
+      "texture": 27,
+      "type": "block_item",
+      "hold": "generic",
+      "stack": 64,
+      "id": 338,
+      "block": "reed",
+      "aliases": [
+        "reed"
+      ]
+    },
+    "saddle": {
+      "texture": 104,
+      "type": "generic",
+      "hold": "generic",
+      "stack": 1,
+      "id": 329
+    },
+    "seeds": {
+      "texture": 9,
+      "type": "plant",
+      "hold": "generic",
+      "block": "wheat",
+      "id": 295
+    },
+    "sign": {
+      "texture": 42,
+      "type": "decoration",
+      "hold": "generic",
+      "stack": 1,
+      "block": "sign",
+      "id": 323
+    },
+    "slimeball": {
+      "texture": 30,
+      "type": "generic",
+      "hold": "generic",
+      "id": 341
+    },
+    "snowball": {
+      "type": "generic",
+      "hold": "generic",
+      "stack": 16,
+      "texture": 14,
+      "id": 332
+    },
+    "stick": {
+      "texture": 53,
+      "type": "generic",
+      "hold": "generic",
+      "id": 280
+    },
+    "stone_axe": {
+      "texture": 113,
+      "material": "stone",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "axe",
+      "level": 2,
+      "id": 275
+    },
+    "stone_hoe": {
+      "texture": 129,
+      "material": "stone",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "hoe",
+      "level": 2,
+      "id": 291
+    },
+    "stone_pickaxe": {
+      "texture": 97,
+      "material": "stone",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "pickaxe",
+      "level": 2,
+      "id": 274
+    },
+    "stone_shovel": {
+      "texture": 81,
+      "material": "stone",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "shovel",
+      "level": 2,
+      "id": 273
+    },
+    "stone_sword": {
+      "texture": 65,
+      "material": "stone",
+      "type": "melee_weapon",
+      "hold": "tool",
+      "damage": 6,
+      "id": 272
+    },
+    "string": {
+      "texture": 8,
+      "type": "generic",
+      "hold": "generic",
+      "id": 287
+    },
+    "water_bucket": {
+      "texture": 75,
+      "type": "bucket",
+      "hold": "generic",
+      "stack": 1,
+      "block": "water",
+      "id": 326
+    },
+    "wheat": {
+      "texture": 25,
+      "type": "generic",
+      "hold": "generic",
+      "id": 296
+    },
+    "wooden_axe": {
+      "texture": 112,
+      "material": "wood",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "axe",
+      "level": 1,
+      "id": 271
+    },
+    "wooden_hoe": {
+      "texture": 128,
+      "material": "wood",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "hoe",
+      "level": 1,
+      "id": 290
+    },
+    "wooden_pickaxe": {
+      "texture": 96,
+      "material": "wood",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "pickaxe",
+      "level": 1,
+      "id": 270
+    },
+    "wooden_shovel": {
+      "texture": 80,
+      "material": "wood",
+      "type": "tool",
+      "hold": "tool",
+      "tooltype": "shovel",
+      "level": 1,
+      "id": 269
+    },
+    "wooden_sword": {
+      "texture": 64,
+      "material": "wood",
+      "type": "melee_weapon",
+      "hold": "tool",
+      "damage": 4,
+      "id": 268
+    },
+    "record_13": {
+      "texture": 240,
+      "type": "music_disc",
+      "hold": "generic",
+      "stack": 1,
+      "id": 2256
+    },
+    "record_cat": {
+      "texture": 241,
+      "type": "music_disc",
+      "hold": "generic",
+      "stack": 1,
+      "id": 2257
+    },
+    "egg": {
+      "texture": 12,
+      "type": "generic",
+      "hold": "generic",
+      "stack": 16,
+      "id": 344
+    },
+    "compass": {
+      "texture": 54,
+      "type": "generic",
+      "hold": "generic",
+      "id": 345,
+      "stack": 1
+    },
+    "chest_minecart": {
+      "texture": 151,
+      "type": "vehicle",
+      "hold": "generic",
+      "stack": 1,
+      "id": 342
+    },
+    "furnace_minecart": {
+      "texture": 167,
+      "type": "vehicle",
+      "hold": "generic",
+      "stack": 1,
+      "id": 343
+    },
+    "fishing_rod": {
+      "texture": 69,
+      "type": "generic",
+      "hold": "tool",
+      "id": 346,
+      "stack": 1,
+      "durability": 64,
+      "rotate_around": true
+    },
+    "clock": {
+      "texture": 70,
+      "type": "generic",
+      "hold": "generic",
+      "stack": 1,
+      "id": 347
+    },
+    "glowstone_dust": {
+      "texture": 73,
+      "type": "generic",
+      "hold": "generic",
+      "id": 348
+    },
+    "raw_fish": {
+      "texture": 89,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 2,
+      "id": 349
+    },
+    "cooked_fish": {
+      "texture": 90,
+      "type": "food",
+      "hold": "generic",
+      "foodpoints": 5,
+      "id": 350
+    }
+  }
+}

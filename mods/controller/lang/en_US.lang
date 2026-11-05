@@ -1,0 +1,5 @@
+# Controller Support
+mod.name=Controller Support
+mod.description=Play with a controller.
+settings.sneak_toggle=Sneak toggle
+settings.sensitivity=Controller sensitivity
