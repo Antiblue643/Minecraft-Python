@@ -1,4 +1,6 @@
-# Minecraft Python
+![A render of a small Minecraft cave, overlayed by the words Minecraft Python Beta!](images/beta_update.png)
+
+![A standalone render of the Minecraft Python logo](images/mcpy_title.png)
 
 Minecraft Python is a Python recreation of the `beta` Minecraft experience.
 
@@ -27,4 +29,4 @@ Minecraft Python is a Python recreation of the `beta` Minecraft experience.
 - [Dedicated server](docs/dedicated-server.md): hosting worlds and server commands.
 - [Mods](docs/mods.md): built-in mods, external Python mods, and per-mod language files.
 
-### Happy Minecrafting!
+# Happy Minecrafting!
