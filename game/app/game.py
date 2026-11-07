@@ -17,7 +17,7 @@ from game.world.dimensions import scale_horizontal_coordinates, dimension_save_d
 from game.gameplay.gui import Gui
 from game.gameplay.screens import (
     GuiMainMenu, GuiDisconnected, GuiCrafting,
-    GuiChest, GuiFurnace, GuiEditSign, GuiGameOver, draw_centered_string, draw_dirt_background,
+    GuiChest, GuiFurnace, GuiDispenser, GuiEditSign, GuiGameOver, draw_centered_string, draw_dirt_background,
 )
 from game.gameplay.settings import GameSettings
 from game.gameplay.performance import PerformanceEventLog
@@ -318,6 +318,7 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         self.player.workbench_opener = self.open_workbench
         self.player.chest_opener = self.open_chest
         self.player.furnace_opener = self.open_furnace
+        self.player.dispenser_opener = self.open_dispenser
         self.player.minecart_chest_opener = self.open_minecart_chest
         self.player.sign_opener = self.open_sign
         self.player.on_death_callback = self.on_player_death
@@ -533,6 +534,7 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         self.player.workbench_opener = self.open_workbench
         self.player.chest_opener = self.open_chest
         self.player.furnace_opener = self.open_furnace
+        self.player.dispenser_opener = self.open_dispenser
         self.player.minecart_chest_opener = self.open_minecart_chest
         self.player.sign_opener = self.open_sign
         self.player.on_death_callback = self.on_player_death
@@ -1049,6 +1051,17 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
             te = TileEntityFurnace(self.world, x, y, z)
             self.world.set_tile_entity(x, y, z, te)
         self.display_gui_screen(GuiFurnace(self.player, te))
+
+    def open_dispenser(self, x, y, z):
+        if self.player is None or self.world is None:
+            return
+        te = self.world.get_tile_entity(x, y, z)
+        if te is None:
+            from game.block.tile_entity import TileEntityDispenser
+            te = TileEntityDispenser(self.world, x, y, z)
+            self.world.set_tile_entity(x, y, z, te)
+        if getattr(te, "SIZE", 0) == 9:
+            self.display_gui_screen(GuiDispenser(self.player, te))
 
     def open_sign(self, x, y, z):
         if self.player is None or self.world is None:

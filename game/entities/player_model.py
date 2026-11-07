@@ -1131,6 +1131,17 @@ def _held_block_uses_3d(defn) -> bool:
     return defn.get("model", "cube") in _HELD_3D_BLOCK_MODELS
 
 
+def _held_item_uses_3d_block(item_id, item_api) -> bool:
+    if item_id == "cake":
+        return False
+    definition = getattr(item_api, "block_defs", {}).get(item_id)
+    return bool(
+        definition
+        and _held_block_uses_3d(definition)
+        and getattr(item_api, "block_texture", None) is not None
+    )
+
+
 def _render_third_person_held_item(player, model, brightness: float) -> None:
     pushed = False
     try:
@@ -1161,7 +1172,7 @@ def _render_third_person_held_item(player, model, brightness: float) -> None:
         glTranslatef(-1.0 * _UNIT, 7.0 * _UNIT, 1.0 * _UNIT)
         glColor4f(brightness, brightness, brightness, 1.0)
 
-        is_block = held.id in getattr(Item, "block_defs", {})
+        is_block = held.id in getattr(Item, "block_defs", {}) and held.id != "cake"
         defn = Item.block_defs.get(held.id) if is_block else None
         use_3d_block = (
             is_block and _held_block_uses_3d(defn)
@@ -1641,13 +1652,11 @@ def _draw_held_sprite(held, brightness=1.0):
     if (held.id in getattr(Item, "item_defs", {})
             and "texture" in Item.item_defs[held.id] and Item.item_texture is not None):
         defn = Item.item_defs[held.id]
-        atlas_idx = defn.get("texture", 0)
-        if isinstance(atlas_idx, list):
-            atlas_idx = atlas_idx[0]
+        atlas_idx = Item.icon_texture(held.id, getattr(held, "damage", 0))
         tex = Item.item_texture
     elif is_block and Item.block_texture is not None:
         defn = Item.block_defs[held.id]
-        faces = defn.get("faces", 0)
+        faces = Item.block_faces(held.id, getattr(held, "damage", 0))
         if isinstance(faces, list):
             atlas_idx = faces[2] if len(faces) > 2 else faces[0]
         else:
@@ -1737,7 +1746,7 @@ def _draw_held_block_cube(player, held, brightness=1.0):
     defn = Item.block_defs.get(held.id)
     if not defn:
         return
-    faces = defn.get("faces", 0)
+    faces = Item.block_faces(held.id, getattr(held, "damage", 0))
 
     def face_idx(slot):
         if isinstance(faces, list):
@@ -1831,10 +1840,10 @@ def _draw_held_item(player, brightness=1.0, held=None):
     except Exception:
         return
 
-    is_block = held.id in getattr(Item, "block_defs", {})
+    is_block = held.id in getattr(Item, "block_defs", {}) and held.id != "cake"
     defn = Item.block_defs.get(held.id) if is_block else None
 
-    if is_block and _held_block_uses_3d(defn) and Item.block_texture is not None:
+    if _held_item_uses_3d_block(held.id, Item):
         glPushMatrix()
         glTranslatef(-0.5, -0.5, -0.5)
         if defn.get("model") == "stairs":

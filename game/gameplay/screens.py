@@ -23,7 +23,7 @@ _LOGO_TEXTURE_PATH = "game/textures/gui/logo.png"
 
 _BG_TOP = 0xC0101010
 _BG_BOTTOM = 0xD0303030
-VERSION_TEXT = "Beta 1.1_02"
+VERSION_TEXT = "Beta 1.2_02"
 _LOG = logging.getLogger(__name__)
 
 def _rgb(color):
@@ -2614,6 +2614,43 @@ class GuiChest(GuiContainer):
         left, top = self._gui_origin()
         d = self.mc.display
         draw_string(d, self.chest_title, left + 8, top + 6, 0x404040, shadow=False)
+        draw_string(d, translate("key.inventory"), left + 8, top + self.y_size - 96 + 2, 0x404040, shadow=False)
+
+
+class GuiDispenser(GuiContainer):
+    x_size = 176
+    y_size = 166
+
+    def __init__(self, player, tile_entity):
+        super().__init__()
+        self.player = player
+        self.tile_entity = tile_entity
+        self._tex = None
+
+    def init_gui(self):
+        inv = self.player.inventory
+        te = self.tile_entity
+        self.slots = []
+        for row in range(3):
+            for col in range(3):
+                self.slots.append(TileSlot(te, col + row * 3, 61 + col * 18, 17 + row * 18))
+        for row in range(3):
+            for col in range(9):
+                self.slots.append(Slot(inv, col + (row + 1) * 9, 8 + col * 18, 84 + row * 18))
+        for col in range(9):
+            self.slots.append(Slot(inv, col, 8 + col * 18, 142))
+
+    def draw_gui_container_background(self):
+        if self._tex is None:
+            self._tex = Texture("game/textures/gui/trap.png")
+        left, top = self._gui_origin()
+        glColor4f(1.0, 1.0, 1.0, 1.0)
+        draw_tex_rect(self._tex, left, top, 0, 0, self.x_size, self.y_size)
+
+    def draw_gui_container_foreground(self):
+        left, top = self._gui_origin()
+        d = self.mc.display
+        draw_string(d, "Dispenser", left + 8, top + 6, 0x404040, shadow=False)
         draw_string(d, translate("key.inventory"), left + 8, top + self.y_size - 96 + 2, 0x404040, shadow=False)
 
 

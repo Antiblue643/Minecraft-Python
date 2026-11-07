@@ -200,6 +200,14 @@ def _partial(world):
         return 0.0
 
 
+def _spawn_debug_entity(number, world, player):
+    if int(number) == 14:
+        from game.entities.squid import Squid
+        return Squid.spawn_near_player(world, player)
+    from game.entities.debug_spawning import spawn_debug_entity
+    return spawn_debug_entity(int(number), world, player)
+
+
 def handle_key(game, event, clock=CLOCK, path=None) -> bool:
     import pygame as pg
 
@@ -212,31 +220,31 @@ def handle_key(game, event, clock=CLOCK, path=None) -> bool:
     if mods is None:
         mods = pg.key.get_mods()
 
-    if pg.key.get_pressed()[pg.K_F2]:
-        if key == pg.K_1 or key == pg.K_5:
-            midnight = key == pg.K_1
+    if key in (pg.K_o, pg.K_j, pg.K_k, pg.K_l,
+               pg.K_SEMICOLON, pg.K_QUOTE):
+        if key == pg.K_o:
             clock.set_time_of_day(
-                world.world_time, MIDNIGHT if midnight else NOON, _partial(world),
+                world.world_time, MIDNIGHT, _partial(world),
             )
-            _refresh_sky(world)
-            persist(game, world, clock, path)
-            from game.localization import translate_mod
-            _say(game, translate_mod(
-                "creative", "debug.timeMidnight" if midnight else "debug.timeNoon",
-            ))
-            return True
-        if key == pg.K_3:
+            message = "debug.timeMidnight"
+        elif key == pg.K_SEMICOLON:
+            clock.set_time_of_day(
+                world.world_time, NOON, _partial(world),
+            )
+            message = "debug.timeNoon"
+        elif key == pg.K_k:
             paused = clock.toggle_pause(world.world_time, _partial(world))
-            _refresh_sky(world)
-            persist(game, world, clock, path)
-            from game.localization import translate_mod
-            _say(game, translate_mod(
-                "creative", "debug.dayCyclePaused" if paused else "debug.dayCycleResumed",
-            ))
+            message = "debug.dayCyclePaused" if paused else "debug.dayCycleResumed"
+        elif key == pg.K_QUOTE:
+            clock.reset()
+            message = "debug.timeReset"
+        else:
             return True
-        if key == pg.K_2 or key == pg.K_4:
-            return True  
-        return False
+        _refresh_sky(world)
+        persist(game, world, clock, path)
+        from game.localization import translate_mod
+        _say(game, translate_mod("creative", message))
+        return True
 
     if key == pg.K_F4:
         game._creative_debug_f4_held = True
@@ -248,14 +256,12 @@ def handle_key(game, event, clock=CLOCK, path=None) -> bool:
             Mob.global_ai_paused = not Mob.global_ai_paused
             return True
         if key == pg.K_0:
-            from game.entities.debug_spawning import spawn_debug_entity
-            spawn_debug_entity(0, world, player)
+            _spawn_debug_entity(0, world, player)
             return True
         number = getattr(game, "num_keys", {}).get(key)
         if number is not None:
-            from game.entities.debug_spawning import spawn_debug_entity
             bank = 10 if mods & pg.KMOD_CTRL else 1
-            spawn_debug_entity(number + bank, world, player)
+            _spawn_debug_entity(number + bank, world, player)
             return True
     return False
 
@@ -280,11 +286,11 @@ def update(game, world, player, dt, clock=CLOCK, path=None):
     )
     if active:
         pressed = pg.key.get_pressed()
-        if pressed[pg.K_F2]:
-            forward, back = bool(pressed[pg.K_4]), bool(pressed[pg.K_2])
-            if forward != back:
-                clock.scrub(1 if forward else -1, dt)
-                _refresh_sky(world)
-                return
+        forward, back = bool(pressed[pg.K_l]), bool(pressed[pg.K_j])
+        if forward != back:
+            clock.scrub(1 if forward else -1, dt)
+            _refresh_sky(world)
+            return
     if clock.stop_scrub() and world is not None:
         persist(game, world, clock, path)
+

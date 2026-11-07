@@ -43,6 +43,7 @@ BIOMES = {
     "ice_desert": Biome("ice_desert", "Ice Desert", "sand", "sand", True),
     "tundra": Biome("tundra", "Tundra", snowy=True),
     "hell": Biome("hell", "Hell", "netherrack", "netherrack"),
+    "void": Biome("void", "Void"),
 }
 
 
@@ -501,3 +502,15 @@ class BiomeProvider:
 
     def get_foliage_tint(self, x: int, z: int) -> tuple[int, int, int]:
         return self.get_tint(x, z, "foliage")
+
+
+class VoidBiomeProvider(BiomeProvider):
+
+    def get_biome(self, x: int, z: int) -> Biome:
+        return BIOMES["void"]
+
+    def get_grass_tint(self, x: int, z: int) -> tuple[int, int, int]:
+        return (255, 255, 255)
+
+    def get_foliage_tint(self, x: int, z: int) -> tuple[int, int, int]:
+        return (255, 255, 255)

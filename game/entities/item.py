@@ -19,8 +19,8 @@ class Item:
     block_texture = None
     item_texture  = None
 
-    TOOL_DURABILITY  = {"wood": 32, "stone": 64, "iron": 128, "diamond": 1025, "gold": 32}
-    SWORD_DURABILITY = {"wood": 32, "stone": 64, "iron": 128, "diamond": 256, "gold": 32}
+    TOOL_DURABILITY  = {"wood": 59, "stone": 131, "iron": 250, "diamond": 1561, "gold": 32}
+    SWORD_DURABILITY = {"wood": 59, "stone": 131, "iron": 250, "diamond": 1561, "gold": 32}
     ARMOR_BASE_DURABILITY = (11, 16, 15, 13)
 
     SINGLE_STACK_TYPES = frozenset({"tool", "melee_weapon", "food", "armor"})
@@ -47,122 +47,78 @@ class Item:
         block = cls.item_defs.get(item_id, {}).get("block")
         return block if block in cls.block_defs else None
 
-    JAVA_LANGUAGE_KEY_ALIASES = {
-        "tile.grass_block": "tile.grass",
-        "tile.cobblestone": "tile.stonebrick",
-        "tile.planks": "tile.wood",
-        "tile.stairs": "tile.stairsWood",
-        "tile.cobblestone_stairs": "tile.stairsStone",
-        "tile.gold_ore": "tile.oreGold",
-        "tile.iron_ore": "tile.oreIron",
-        "tile.coal_ore": "tile.oreCoal",
-        "tile.wool": "tile.cloth",
-        "tile.yellow_flower": "tile.flower",
-        "tile.red_flower": "tile.rose",
-        "tile.brown_mushroom": "tile.mushroom",
-        "tile.red_mushroom": "tile.mushroom",
-        "tile.gold_block": "tile.blockGold",
-        "tile.iron_block": "tile.blockIron",
-        "tile.double_stone_slab": "tile.stoneSlab",
-        "tile.stone_slab": "tile.stoneSlab",
-        "tile.bricks": "tile.brick",
-        "tile.mossy_cobblestone": "tile.stoneMoss",
-        "tile.mob_spawner": "tile.mobSpawner",
-        "tile.diamond_ore": "tile.oreDiamond",
-        "tile.diamond_block": "tile.blockDiamond",
-        "tile.crafting_table": "tile.workbench",
-        "tile.furnace_lit": "tile.furnace",
-        "tile.wooden_door": "tile.doorWood",
-        "tile.wall_sign": "tile.sign",
-        "tile.redstone_ore": "tile.oreRedstone",
-        "tile.redstone_ore_lit": "tile.oreRedstone",
-        "tile.redstone_wire": "tile.redstoneDust",
-        "tile.stone_pressure_plate": "tile.pressurePlate",
-        "tile.wooden_pressure_plate": "tile.pressurePlate",
-        "tile.iron_door": "tile.doorIron",
-        "tile.unlit_redstone_torch": "tile.notGate",
-        "tile.redstone_torch": "tile.notGate",
-        "tile.stone_button": "tile.button",
-        "tile.snow_block": "tile.snow",
-        "tile.clay_block": "tile.clay",
-        "tile.reed": "tile.reeds",
-        "tile.netherrack": "tile.hellrock",
-        "tile.soul_sand": "tile.hellsand",
-        "tile.glowstone": "tile.lightgem",
-        "tile.jack_o_lantern": "tile.pumpkin",
-        "item.chainmail_boots": "item.bootsChain",
-        "item.chainmail_chestplate": "item.chestplateChain",
-        "item.chainmail_helmet": "item.helmetChain",
-        "item.chainmail_leggings": "item.leggingsChain",
-        "item.clay": "item.clay",
-        "item.cooked_porkchop": "item.porkchopCooked",
-        "item.diamond": "item.emerald",
-        "item.diamond_axe": "item.hatchetDiamond",
-        "item.diamond_boots": "item.bootsDiamond",
-        "item.diamond_chestplate": "item.chestplateDiamond",
-        "item.diamond_helmet": "item.helmetDiamond",
-        "item.diamond_hoe": "item.hoeDiamond",
-        "item.diamond_leggings": "item.leggingsDiamond",
-        "item.diamond_pickaxe": "item.pickaxeDiamond",
-        "item.diamond_shovel": "item.shovelDiamond",
-        "item.diamond_sword": "item.swordDiamond",
-        "item.flint_and_steel": "item.flintAndSteel",
-        "item.gold_axe": "item.hatchetGold",
-        "item.gold_boots": "item.bootsGold",
-        "item.gold_chestplate": "item.chestplateGold",
-        "item.gold_helmet": "item.helmetGold",
-        "item.gold_hoe": "item.hoeGold",
-        "item.gold_ingot": "item.ingotGold",
-        "item.gold_leggings": "item.leggingsGold",
-        "item.gold_pickaxe": "item.pickaxeGold",
-        "item.gold_shovel": "item.shovelGold",
-        "item.gold_sword": "item.swordGold",
-        "item.golden_apple": "item.appleGold",
-        "item.gunpowder": "item.sulphur",
-        "item.iron_axe": "item.hatchetIron",
-        "item.iron_boots": "item.bootsIron",
-        "item.iron_chestplate": "item.chestplateIron",
-        "item.iron_helmet": "item.helmetIron",
-        "item.iron_hoe": "item.hoeIron",
-        "item.iron_ingot": "item.ingotIron",
-        "item.iron_leggings": "item.leggingsIron",
-        "item.iron_pickaxe": "item.pickaxeIron",
-        "item.iron_shovel": "item.shovelIron",
-        "item.iron_sword": "item.swordIron",
-        "item.lava_bucket": "item.bucketLava",
-        "item.leather_boots": "item.bootsCloth",
-        "item.leather_chestplate": "item.chestplateCloth",
-        "item.leather_helmet": "item.helmetCloth",
-        "item.leather_leggings": "item.leggingsCloth",
-        "item.milk_bucket": "item.milk",
-        "item.mushroom_stew": "item.mushroomStew",
-        "item.raw_porkchop": "item.porkchopRaw",
-        "item.stone_axe": "item.hatchetStone",
-        "item.stone_hoe": "item.hoeStone",
-        "item.stone_pickaxe": "item.pickaxeStone",
-        "item.stone_shovel": "item.shovelStone",
-        "item.stone_sword": "item.swordStone",
-        "item.water_bucket": "item.bucketWater",
-        "item.wooden_axe": "item.hatchetWood",
-        "item.wooden_hoe": "item.hoeWood",
-        "item.wooden_pickaxe": "item.pickaxeWood",
-        "item.wooden_shovel": "item.shovelWood",
-        "item.wooden_sword": "item.swordWood",
-        "item.record_13": "item.record",
-        "item.record_cat": "item.record",
-        "item.chest_minecart": "item.minecartChest",
-        "item.furnace_minecart": "item.minecartFurnace",
-        "item.fishing_rod": "item.fishingRod",
-        "item.glowstone_dust": "item.yellowDust",
-        "item.raw_fish": "item.fishRaw",
-        "item.cooked_fish": "item.fishCooked",
-    }
+    @classmethod
+    def has_subtypes(cls, item_id):
+        return bool(cls.definition(item_id).get("subtypes", False))
+
+    @classmethod
+    def subtype_key(cls, item_id, damage=0):
+        damage = int(damage or 0)
+        if damage and cls.has_subtypes(item_id):
+            return f"{item_id}:{damage}"
+        return item_id
+
+    @classmethod
+    def parse_subtype_key(cls, key):
+        item_id, separator, damage = str(key).partition(":")
+        if separator and damage.lstrip("-").isdigit():
+            return item_id, int(damage)
+        return str(key), 0
+
+    @classmethod
+    def icon_texture(cls, item_id, damage=0):
+        atlas = cls.item_defs.get(item_id, {}).get("texture", 0)
+        if isinstance(atlas, list):
+            atlas = atlas[0]
+        if item_id == "dye":
+            d = int(damage or 0) & 15
+            atlas = int(atlas) + d % 8 * 16 + d // 8
+        return atlas
+
+    @classmethod
+    def block_faces(cls, item_id, damage=0, default=None):
+        definition = cls.block_defs.get(item_id) or {}
+        meta = int(damage or 0) & 15
+        if item_id == "leaves":
+            try:
+                from game.block import Block
+                base = 52 if bool(getattr(Block, "_fancy_graphics", True)) else 53
+            except Exception:
+                base = 52
+            return base + (80 if (meta & 3) == 1 else 0)
+        variants = definition.get("metaFaces")
+        if variants and meta:
+            found = variants.get(str(meta))
+            if found is not None:
+                return found
+        return definition.get("faces", 0) if default is None else default
 
     @classmethod
     def translation_key(cls, item_id):
-        namespace = "tile" if cls.is_block(item_id) else "item"
-        key = f"{namespace}.{item_id}"
-        return cls.JAVA_LANGUAGE_KEY_ALIASES.get(key, key)
+        is_block = cls.is_block(item_id)
+        namespace = "tile" if is_block else "item"
+        definition = (
+            cls.block_defs.get(item_id, {}) if is_block
+            else cls.item_defs.get(item_id, {})
+        )
+        java_name = definition.get("javaName", item_id)
+        return f"{namespace}.{java_name}"
+
+    DYE_COLORS = (
+        "black", "red", "green", "brown", "blue", "purple", "cyan", "silver",
+        "gray", "pink", "lime", "yellow", "lightBlue", "magenta", "orange", "white",
+    )
+
+    @classmethod
+    def stack_translation_key(cls, item_id, damage=0):
+        damage = int(damage or 0)
+        if item_id == "wool":
+            return f"tile.cloth.{cls.DYE_COLORS[~damage & 15]}"
+        if item_id == "dye":
+            return f"item.dyePowder.{cls.DYE_COLORS[damage & 15]}"
+        if item_id == "coal" and damage == 1:
+            return "item.charcoal"
+        return cls.translation_key(item_id)
 
     @classmethod
     def _mod_translation(cls, item_id, suffix):
@@ -178,13 +134,13 @@ class Item:
         )
 
     @classmethod
-    def display_name(cls, item_id):
+    def display_name(cls, item_id, damage=0):
         from game.localization import translate
 
         mod_name = cls._mod_translation(item_id, "name")
         if mod_name is not None:
             return mod_name
-        return translate(cls.translation_key(item_id) + ".name", default="")
+        return translate(cls.stack_translation_key(item_id, damage) + ".name", default="")
 
     @classmethod
     def description(cls, item_id):
@@ -249,6 +205,14 @@ class ItemStack:
     @property
     def max_damage(self):
         return Item.max_damage(self.id)
+
+    @property
+    def subtype_key(self):
+        return Item.subtype_key(self.id, self.damage)
+
+    def stacks_with(self, other):
+        return (other is not None and self.id == other.id
+                and int(self.damage) == int(other.damage))
 
     def copy(self):
         return ItemStack(self.id, self.count, self.damage)
@@ -326,7 +290,9 @@ class ItemEntity(ItemRendererMixin, Entity):
             stack.id in Item.block_defs and block_def.get("model") == "fence"
         )
         self._is_block = (
-            stack.id in Item.block_defs and block_def.get("model", "cube") == "cube"
+            stack.id != "cake"
+            and stack.id in Item.block_defs
+            and block_def.get("model", "cube") == "cube"
         )
 
     def can_be_picked_up(self):

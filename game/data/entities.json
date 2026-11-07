@@ -65,6 +65,9 @@
     },
     "chicken": {
       "legacy_id": "Chicken"
+    },
+    "squid": {
+      "legacy_id": "Squid"
     }
   }
 }

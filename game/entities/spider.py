@@ -81,6 +81,11 @@ class Spider(Monster):
         super().update(dt)
         self._position_rider()
 
+    def _check_ladder(self):
+        self.on_ladder = bool(self.horizontal_collision)
+        self.ladder_contact_normal = (0.0, 0.0, 0.0)
+        return self.on_ladder
+
     def draw(self):
         from .mob_models import draw_living_with_model
 

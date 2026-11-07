@@ -280,9 +280,6 @@ class Pathfinder:
 
         if result_y <= 0:
             return None
-        under = self._block_type(x, result_y - 1, z)
-        if under in _LIQUIDS:
-            return None
         return self._open(x, result_y, z)
 
     def _open(self, x, y, z):

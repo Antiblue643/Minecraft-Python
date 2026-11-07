@@ -12,6 +12,7 @@ from collections import deque
 from typing import NamedTuple
 
 from game.world.chunk import Chunk
+from game.world.mesh_queue import select_mesh_build_jobs
 from game.world.chunk_invalidation import (
     mark_chunk_boundary_dirty, invalidate_loaded_chunk_neighbors,
 )
@@ -278,6 +279,7 @@ class World:
         self._network_edit_depth = 0
         self._network_block_callback = None
         self._network_world_event_callback = None
+        self._network_note_block_callback = None
         self._mp_suppress_world_events = False
         self._network_entity_spawn_callback = None
         self._network_attack_callback = None
@@ -562,7 +564,7 @@ class World:
             unregister_door_hinge(self, x, door_y, z)
 
         _TILE_ENTITY_BLOCKS = (
-            "chest", "furnace", "furnace_lit", "sign", "wall_sign", "mob_spawner",
+            "chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign", "mob_spawner", "note_block",
         )
         old_is_container = old_block_type in _TILE_ENTITY_BLOCKS
         new_is_container = block_type in _TILE_ENTITY_BLOCKS
@@ -2690,6 +2692,7 @@ class World:
                     mob.death_time = int(record.get("death_time", 0))
                     if save_id == legacy_entity_id("sheep"):
                         mob.sheared = bool(record.get("sheared", False))
+                        mob.set_fleece_color(int(record.get("fleece_color", 0)))
                     if save_id == legacy_entity_id("pig"):
                         mob.saddled = bool(record.get("saddled", False))
                     if save_id == legacy_entity_id("zombie_pigman"):
@@ -2745,7 +2748,7 @@ class World:
                 continue
             meta = 0
             block_type = value
-            if player_edits and isinstance(value, tuple):
+            if isinstance(value, tuple):
                 block_type, meta = value
             if block_type is None:
                 block_id = 0
@@ -3151,7 +3154,7 @@ class World:
 
         try:
             tile_entity_blocks = (
-                "chest", "furnace", "furnace_lit", "sign", "wall_sign", "mob_spawner",
+                "chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign", "mob_spawner", "note_block",
             )
             fluid_scheduler = self._fluid_scheduler
             ensure_block_id = self._ensure_block_type_id
@@ -3318,53 +3321,61 @@ class World:
             self.set_generated_spawner_mob(x, y, z, mob_id)
             return
 
-        (x, y, z), block_type = item
-        target_key = state["target_key"]
-        chunk_key = self._get_chunk_index(x, z)
-        self._worldgen_block_overrides.setdefault(chunk_key, {})[(x, y, z)] = block_type
-        chunk = self.chunks.get(chunk_key)
-        if chunk is None or (x, y, z) in self.block_overrides.get(chunk_key, {}):
-            return
-
+        (x, y, z), block_value = item
+        block_type = block_value
+        metadata = 0
+        if isinstance(block_value, tuple) and len(block_value) == 2:
+            block_type, metadata = block_value
+        metadata = int(metadata) & 15
         if isinstance(block_type, Block):
             block_type = block_type.block_type
         if block_type is not None:
             block_type = str(block_type)
 
+        stored_value = (block_type, metadata) if metadata else block_type
+        target_key = state["target_key"]
+        chunk_key = self._get_chunk_index(x, z)
+        self._worldgen_block_overrides.setdefault(chunk_key, {})[(x, y, z)] = stored_value
+        chunk = self.chunks.get(chunk_key)
+        if chunk is None or (x, y, z) in self.block_overrides.get(chunk_key, {}):
+            return
+
         relight = state["relight"]
         idx = chunk._index(x, y, z)
         if idx is None:
             old_type = chunk.get_block_type(x, y, z)
-            if old_type == block_type:
+            old_meta = self.get_metadata(x, y, z)
+            if old_type == block_type and old_meta == metadata:
                 return
             if (self._population_commit_light_signature(state, old_type) != self._population_commit_light_signature(state, block_type)
                     and chunk.light_ready and chunk_key != target_key):
                 relight.add(chunk_key)
-            self.set_block(x, y, z, block_type)
+            self.set_block(x, y, z, block_type, meta=metadata)
             return
 
         old_id = chunk.blocks[idx]
         id_to_type = chunk._id_to_block_type
         old_type = id_to_type[old_id] if old_id < len(id_to_type) else None
-        if old_type == block_type:
+        old_meta = int(chunk.metadata[idx]) & 15
+        if old_type == block_type and old_meta == metadata:
             return
         if (self._population_commit_light_signature(state, old_type) != self._population_commit_light_signature(state, block_type)
                 and chunk.light_ready and chunk_key != target_key):
             relight.add(chunk_key)
 
         tile_entity_blocks = (
-            "chest", "furnace", "furnace_lit", "sign", "wall_sign", "mob_spawner",
+            "chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign", "mob_spawner", "note_block",
         )
         if (old_type in tile_entity_blocks or block_type in tile_entity_blocks
                 or old_type in _DOOR_BLOCKS or block_type in _DOOR_BLOCKS):
-            self.set_block(x, y, z, block_type)
+            self.set_block(x, y, z, block_type, meta=metadata)
             return
 
         new_id = 0 if block_type is None else self._ensure_block_type_id(block_type)
         if old_id != new_id:
             chunk._invalidate_mesh_air_cache()
         chunk.blocks[idx] = new_id
-        chunk.metadata[idx] = 0
+        chunk.metadata[idx] = metadata
         if old_id != new_id:
             chunk._mcpy_block_names.pop(idx, None)
         self._note_fire_block_change(x, y, z, old_type, block_type)
@@ -4621,21 +4632,7 @@ class World:
         for key in stale:
             dirty_keys.discard(key)
 
-        jobs.sort(key=lambda job: (job[0], 0 if not self.chunks[job[5]]._has_mesh else 1,
-                                   job[1], job[2], job[3], job[4]))
-
-        if len(jobs) > 1:
-            near = [job for job in jobs if job[0] <= 1]
-            far = [job for job in jobs if job[0] > 1]
-            if near and far:
-                ordered = []
-                i = j = 0
-                while i < len(near) or j < len(far):
-                    if i < len(near):
-                        ordered.append(near[i]); i += 1
-                    if j < len(far):
-                        ordered.append(far[j]); j += 1
-                jobs = ordered
+        jobs = select_mesh_build_jobs(jobs, self.mesh_builds_per_frame, self.chunks)
 
         mesh_frame_start = time.perf_counter()
         built_this_frame = 0

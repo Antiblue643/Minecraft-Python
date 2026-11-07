@@ -50,7 +50,6 @@ def _debug_tools():
         _DEBUG_TOOLS = module
     return _DEBUG_TOOLS
 
-_ALPHA_BLOCK_IDS = frozenset((*range(1, 21), 35, *range(37, 92)))
 _B18_CREATIVE_BLOCK_IDS = (
     4, 1, 56, 14, 15, 16, 21, 73, 98, 98, 98, 82, 57, 41, 42, 7, 22, 45,
     48, 44, 44, 44, 44, 44, 44, 49, 87, 88, 89, 17, 17, 17, 18, 3, 2, 12,
@@ -59,6 +58,20 @@ _B18_CREATIVE_BLOCK_IDS = (
     23, 61, 25, 84, 29, 33, 85, 107, 65, 66, 27, 28, 50, 53, 67, 108,
     109, 69, 70, 72, 76, 77, 92, 96,
 )
+
+_B12_SUPPORTED_CREATIVE_VARIANTS = {
+    6: frozenset((0,)),
+    17: frozenset((0, 1, 2)),
+    35: frozenset(range(16)),
+    44: frozenset((0,)),
+}
+_B12_CORE_BLOCK_IDS = frozenset({
+    1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+    21, 22, 23, 24, 25, 35, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+    47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62,
+    63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78,
+    79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92,
+})
 
 
 def _apply_config(config):
@@ -270,28 +283,36 @@ def _creative_items():
     block_id_to_key = {
         int(definition["id"]): key
         for key, definition in (Block._block_defs or {}).items()
-        if definition.get("id") is not None
+        if isinstance(definition, dict) and definition.get("id") is not None
     }
+    variant_counts = {6: 0, 17: 0, 35: 0, 44: 0, 98: 0}
     entries = []
-    seen_block_ids = set()
     for block_id in _B18_CREATIVE_BLOCK_IDS:
-        if block_id not in _ALPHA_BLOCK_IDS or block_id in seen_block_ids:
-            continue
-        seen_block_ids.add(block_id)
         key = block_id_to_key.get(block_id)
-        if key is None:
+        if key is None or block_id not in _B12_CORE_BLOCK_IDS:
             continue
-        entries.append(ItemStack(key, 1, 0))
+        damage = variant_counts.get(block_id, 0)
+        if block_id in variant_counts:
+            variant_counts[block_id] += 1
+        supported = _B12_SUPPORTED_CREATIVE_VARIANTS.get(block_id, frozenset((0,)))
+        if damage not in supported:
+            continue
+        entries.append(ItemStack(key, 1, damage))
 
     item_entries = sorted(
         (
             (int(definition.get("id", 10**9)), key)
             for key, definition in (Item.item_defs or {}).items()
-            if int(definition.get("id", -1)) >= 256
+            if isinstance(definition, dict)
+            and int(definition.get("id", -1)) >= 256
         ),
         key=lambda pair: pair[0],
     )
-    entries.extend(ItemStack(key, 1) for _item_id, key in item_entries)
+    for _item_id, key in item_entries:
+        entries.append(ItemStack(key, 1))
+
+    if any(key == "dye" for _item_id, key in item_entries):
+        entries.extend(ItemStack("dye", 1, damage) for damage in range(1, 16))
     return entries
 
 
@@ -303,24 +324,19 @@ def _metadata_block_faces(stack, base_definition):
     definition = dict(base_definition)
 
     if item_id == "wool":
-        atlas = 64 if damage == 0 else 113 + (((~damage) & 8) >> 3) + ((~damage) & 7) * 16
-        definition["faces"] = atlas
+        from game.block.wool import wool_texture_index
+        definition["faces"] = wool_texture_index(damage, base_definition)
     elif item_id == "sapling":
-        definition["faces"] = 63 if (damage & 3) == 1 else 79 if (damage & 3) == 2 else 15
-        definition["model"] = "cross"
+        return None
     elif item_id == "log":
         side = 116 if damage == 1 else 117 if damage == 2 else 20
         definition["faces"] = [side, side, 21, 21, side, side]
+    elif item_id == "leaves":
+        from game.block import Block
+        base_tile = 52 if bool(getattr(Block, "_fancy_graphics", True)) else 53
+        definition["faces"] = base_tile + (80 if (damage & 3) == 1 else 0)
     elif item_id == "stone_slab":
-        faces_by_meta = {
-            0: [5, 5, 6, 6, 5, 5],
-            1: [192, 192, 208, 176, 192, 192],
-            2: [4, 4, 4, 4, 4, 4],
-            3: [16, 16, 16, 16, 16, 16],
-            4: [7, 7, 7, 7, 7, 7],
-            5: [54, 54, 54, 54, 54, 54],
-        }
-        definition["faces"] = faces_by_meta.get(damage, faces_by_meta[0])
+        return None
     else:
         return None
     return definition

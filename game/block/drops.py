@@ -67,9 +67,14 @@ def block_drops(block_type, meta=0, rng=random, held=None):
         item_id = _DROPS_AS.get(block_type, block_type)
         count = 1
 
-    if item_id is None or count <= 0 or not Item.exists(item_id):
+    if item_id is None or count <= 0:
         return []
-    return [ItemStack(item_id, count)]
+    item_id, damage = Item.parse_subtype_key(item_id)
+    if not handled and item_id == block_type and Item.has_subtypes(block_type):
+        damage = int(meta) & 15
+    if not Item.exists(item_id):
+        return []
+    return [ItemStack(item_id, count, damage)]
 
 
 def can_harvest(block_type, held):

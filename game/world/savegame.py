@@ -1185,6 +1185,15 @@ class WorldSave:
                     "CookTime": tag.Short(int(data.get("cook", 0))),
                     "McpyBurnTotal": tag.Short(int(data.get("burn_total", 0))),
                 }))
+            elif te_type == "dispenser":
+                items = tag.List[tag.Compound]([])
+                for entry in data.get("items", []):
+                    items.append(self._encode_te_item(tag, entry))
+                result.append(tag.Compound({
+                    "id": tag.String("Trap"),
+                    "x": tag.Int(int(x)), "y": tag.Int(int(y)), "z": tag.Int(int(z)),
+                    "Items": items,
+                }))
             elif te_type == "sign":
                 lines = data.get("text") or ["", "", "", ""]
                 result.append(tag.Compound({
@@ -1201,6 +1210,12 @@ class WorldSave:
                     "x": tag.Int(int(x)), "y": tag.Int(int(y)), "z": tag.Int(int(z)),
                     "EntityId": tag.String(str(data.get("entity_id", legacy_entity_id("pig")))),
                     "Delay": tag.Short(int(data.get("delay", 20))),
+                }))
+            elif te_type == "note_block":
+                result.append(tag.Compound({
+                    "id": tag.String("Music"),
+                    "x": tag.Int(int(x)), "y": tag.Int(int(y)), "z": tag.Int(int(z)),
+                    "note": tag.Byte(max(0, min(24, int(data.get("note", 0))))),
                 }))
         return result
 
@@ -1221,7 +1236,8 @@ class WorldSave:
 
     def _decode_tile_entities(self, world, records):
         from game.block.tile_entity import (
-            TileEntityChest, TileEntityFurnace, TileEntityMobSpawner, TileEntitySign,
+            TileEntityChest, TileEntityDispenser, TileEntityFurnace,
+            TileEntityMobSpawner, TileEntitySign, TileEntityNote,
         )
         from game.entities.item import ItemStack
         for entry in records or []:
@@ -1258,6 +1274,16 @@ class WorldSave:
                         count = max(1, min(64, _as_int(item, "Count", 1) & 0xFF))
                         te.furnace_item_stacks[slot] = ItemStack(name, count, _as_int(item, "Damage"))
                     world.tile_entities[(x, y, z)] = te
+                elif te_id == "Trap":
+                    te = TileEntityDispenser(world, x, y, z)
+                    for item in items_raw:
+                        slot = _as_int(item, "Slot") & 0xFF
+                        name = str(item.get("McpyId", "")) or item_name_from_classic_id(_as_int(item, "id") & 0xFFFF)
+                        if name is None or not (0 <= slot < te.SIZE):
+                            continue
+                        count = max(1, min(64, _as_int(item, "Count", 1) & 0xFF))
+                        te.contents[slot] = ItemStack(name, count, _as_int(item, "Damage"))
+                    world.tile_entities[(x, y, z)] = te
                 elif te_id == "Sign":
                     te = TileEntitySign(world, x, y, z)
                     for i in range(4):
@@ -1267,6 +1293,10 @@ class WorldSave:
                     te = TileEntityMobSpawner(world, x, y, z)
                     te.mob_id = str(entry.get("EntityId", legacy_entity_id("pig")) or legacy_entity_id("pig"))
                     te.delay = _as_int(entry, "Delay", 20)
+                    world.tile_entities[(x, y, z)] = te
+                elif te_id == "Music":
+                    te = TileEntityNote(world, x, y, z)
+                    te.note = max(0, min(24, _as_int(entry, "note", 0)))
                     world.tile_entities[(x, y, z)] = te
             except Exception as exc:
                 print(f"Could not restore a tile entity: {exc}")
@@ -1291,6 +1321,7 @@ class WorldSave:
             from game.entities.creeper import Creeper
             from game.entities.slime import Slime
             from game.entities.ghast import Ghast
+            from game.entities.squid import Squid
             cls._LIVING_MOB_TYPES = {
                 legacy_entity_id("mob"): Mob,
                 legacy_entity_id("monster"): Monster,
@@ -1306,6 +1337,7 @@ class WorldSave:
                 legacy_entity_id("creeper"): Creeper,
                 legacy_entity_id("slime"): Slime,
                 legacy_entity_id("ghast"): Ghast,
+                legacy_entity_id("squid"): Squid,
             }
         return cls._LIVING_MOB_TYPES
 
@@ -1318,6 +1350,7 @@ class WorldSave:
             ("spider", registry[legacy_entity_id("spider")]),
             ("slime", registry[legacy_entity_id("slime")]),
             ("ghast", registry[legacy_entity_id("ghast")]),
+            ("squid", registry[legacy_entity_id("squid")]),
             ("giant", registry[legacy_entity_id("giant")]),
             ("zombie_pigman", registry[legacy_entity_id("zombie_pigman")]),
             ("zombie", registry[legacy_entity_id("zombie")]),
@@ -1580,6 +1613,7 @@ class WorldSave:
             })
             if save_id == legacy_entity_id("sheep"):
                 record["Sheared"] = tag.Byte(1 if getattr(entity, "sheared", False) else 0)
+                record["Color"] = tag.Byte(int(getattr(entity, "fleece_color", 0)) & 15)
             if save_id == legacy_entity_id("pig"):
                 record["Saddle"] = tag.Byte(1 if getattr(entity, "saddled", False) else 0)
             if save_id == legacy_entity_id("slime"):
@@ -1713,6 +1747,7 @@ class WorldSave:
                     "attack_time": max(0, _as_int(entry, "AttackTime")),
                     "death_time": max(0, _as_int(entry, "DeathTime")),
                     "sheared": bool(_as_int(entry, "Sheared")),
+                    "fleece_color": _as_int(entry, "Color") & 15,
                     "saddled": bool(_as_int(entry, "Saddle")),
                     "fuse": max(0, _as_int(entry, "McpyFuse")),
                     "anger": max(0, _as_int(entry, "Anger")),

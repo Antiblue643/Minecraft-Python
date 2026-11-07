@@ -708,6 +708,47 @@ class LavaParticle(Particle):
         self.scale = self._base_scale * (1.0 - t * t)
 
 
+class NoteParticle(Particle):
+
+    def __init__(self, x, y, z, mx=0.0, my=0.0, mz=0.0):
+        super().__init__(x, y, z, 0.0, 0.0, 0.0)
+        self.motion = [0.0, 0.2, 0.0]
+        hue = float(mx) % 1.0
+        tau = math.tau
+        self.red = math.sin(hue * tau) * 0.65 + 0.35
+        self.green = math.sin((hue + 1.0 / 3.0) * tau) * 0.65 + 0.35
+        self.blue = math.sin((hue + 2.0 / 3.0) * tau) * 0.65 + 0.35
+        self.scale *= 0.75 * 2.0
+        self._base_scale = self.scale
+        self.max_age = 6
+        self.tex_index = 64
+        self.no_clip = False
+        self.gravity = 0.0
+
+    def update(self, world=None):
+        self.prev_pos[:] = self.pos
+        if self.age >= self.max_age:
+            self.dead = True
+        else:
+            self.age += 1
+        previous_y = self.pos[1]
+        self._move(world)
+        if self.pos[1] == previous_y:
+            self.motion[0] *= 1.1
+            self.motion[2] *= 1.1
+        self.motion[0] *= 0.66
+        self.motion[1] *= 0.66
+        self.motion[2] *= 0.66
+        if self.on_ground:
+            self.motion[0] *= 0.7
+            self.motion[2] *= 0.7
+
+    def render(self, partial, cam, right, up, brightness=1.0):
+        partial_scale = ((self.age + float(partial)) / max(1, self.max_age)) * 32.0
+        self.scale = self._base_scale * min(1.0, max(0.0, partial_scale))
+        return super().render(partial, cam, right, up, brightness)
+
+
 class ExplosionParticle(Particle):
     def __init__(self, x, y, z, mx=0.0, my=0.0, mz=0.0):
         super().__init__(x, y, z, mx, my, mz)
@@ -767,6 +808,7 @@ _PARTICLE_TYPES = {
     "RedstoneDustParticle": RedstoneDustParticle,
     "LavaParticle": LavaParticle,
     "ExplosionParticle": ExplosionParticle,
+    "NoteParticle": NoteParticle,
 }
 
 

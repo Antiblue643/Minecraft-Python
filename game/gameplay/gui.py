@@ -73,7 +73,7 @@ class Gui:
     def draw_item_tooltip(self, stack, mouse_x, mouse_y):
         if stack is None:
             return
-        title = Item.display_name(stack.id)
+        title = Item.display_name(stack.id, getattr(stack, "damage", 0))
         if not title:
             return
 
@@ -184,7 +184,7 @@ class Gui:
 
     def _draw_block_shape_icon(self, item, x, y, size, surfaces):
         definition = Item.block_defs.get(item.id, {})
-        faces = definition.get("faces", 0)
+        faces = Item.block_faces(item.id, getattr(item, "damage", 0))
 
         def atlas_for(slot):
             if isinstance(faces, list):
@@ -373,7 +373,7 @@ class Gui:
 
         item_defn = Item.item_defs.get(item.id) if item.id in Item.item_defs else None
         if item_defn is not None and "texture" in item_defn and Item.item_texture is not None:
-            atlas_idx = item_defn.get("texture", 0)
+            atlas_idx = Item.icon_texture(item.id, getattr(item, "damage", 0))
             if isinstance(atlas_idx, list):
                 atlas_idx = atlas_idx[0]
             cols = 16
@@ -462,7 +462,7 @@ class Gui:
                 ])
                 return
 
-            faces = defn.get("faces", 0)
+            faces = Item.block_faces(item.id, getattr(item, "damage", 0))
             atlas_idx = faces[4] if isinstance(faces, list) and len(faces) > 4 else (faces[0] if isinstance(faces, list) else faces)
             cols = 16
             tile = 1.0 / cols
@@ -485,7 +485,7 @@ class Gui:
 
         if item.id in Item.item_defs and "texture" in Item.item_defs[item.id] and Item.item_texture is not None:
             defn = Item.item_defs[item.id]
-            atlas_idx = defn.get("texture", 0)
+            atlas_idx = Item.icon_texture(item.id, getattr(item, "damage", 0))
             if isinstance(atlas_idx, list):
                 atlas_idx = atlas_idx[0]
 

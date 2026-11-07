@@ -10,7 +10,6 @@ class Creeper(Monster):
     MOVE_SPEED = 0.7
     FUSE_TIME = 30
     DROP_ITEM = "gunpowder"
-    LIVING_SOUND = "mob.creeper"
     HURT_SOUND = "mob.creeper"
     DEATH_SOUND = "mob.creeperdeath"
 

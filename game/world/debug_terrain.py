@@ -1,5 +1,5 @@
 
-from game.world.biomes import BiomeProvider
+from game.world.biomes import VoidBiomeProvider
 
 
 class DebugTerrainGenerator:
@@ -8,7 +8,7 @@ class DebugTerrainGenerator:
 
     def __init__(self, seed):
         self.seed = int(seed)
-        self.biomes = BiomeProvider(self.seed)
+        self.biomes = VoidBiomeProvider(self.seed)
         self.snow_covered = False
 
     def generate_chunk_data(self, chunk_x, chunk_z, width, depth, block_ids):

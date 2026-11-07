@@ -1,9 +1,7 @@
 
 from engine.display import Display
-from engine.models import Model
 from engine.raster import Renderer
 from engine.textures import Texture
-from game.app.paths import PROJECT_ROOT
 from game.content_data import load_item_definitions
 from game.app.preload import preload_texture_resources
 from game.block import Block
@@ -17,7 +15,6 @@ try:
 except Exception as exc:  
     print(f"Warning: could not draw the startup loading screen: {exc}")
 rndr = Renderer()
-Model.renderer = rndr
 Entity.renderer = rndr
 rndr.display = screen
 

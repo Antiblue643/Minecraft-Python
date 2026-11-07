@@ -153,6 +153,9 @@ class NaturalMobSpawner:
                         continue
 
                     entity = entity_type((fx, fy, fz), yaw=0.0, rng=rng)
+                    from game.entities.sheep import Sheep
+                    if isinstance(entity, Sheep):
+                        entity.set_fleece_color(Sheep.random_fleece_color(rng))
                     next_float = getattr(rng, "next_float", None)
                     yaw_random = next_float() if callable(next_float) else rng.random()
                     entity.yaw = float(yaw_random) * 360.0
@@ -233,6 +236,124 @@ class NaturalMobSpawner:
                 self._perform_spawning(world, spawn_player, rng)
 
 
+class NaturalWaterMobSpawner:
+
+    CHUNK_RADIUS = 8
+    MAX_PER_256_CHUNKS = 5
+
+    def __init__(self, entity_type):
+        self.entity_type = entity_type
+        self._chunk_helper = NaturalMobSpawner(
+            1, (entity_type,), chunk_radius=self.CHUNK_RADIUS,
+            passes_per_tick=1, chunk_chance=1,
+        )
+
+    @staticmethod
+    def _opaque(world, x, y, z):
+        block_type = world.get_block_type(x, y, z)
+        if block_type is None:
+            return False
+        block = world.get_block(x, y, z)
+        if block is None:
+            return False
+        if getattr(block, "opaque", None) is not None:
+            return bool(block.opaque) and not bool(getattr(block, "intangible", False))
+        return is_normal_cube(Block._block_defs.get(block_type))
+
+    @staticmethod
+    def _players(world):
+        player = getattr(world, "player", None)
+        players = [player] if player is not None else []
+        known_positions = {tuple(float(value) for value in p.pos) for p in players}
+        for pos in getattr(world, "_mp_remote_player_positions", ()) or ():
+            try:
+                xyz = tuple(float(pos[index]) for index in range(3))
+            except (IndexError, TypeError, ValueError, OverflowError):
+                continue
+            if not all(math.isfinite(value) for value in xyz) or xyz in known_positions:
+                continue
+            known_positions.add(xyz)
+            players.append(SimpleNamespace(pos=xyz))
+        return players
+
+    def _try_chunk(self, world, players, chunk_x, chunk_z, rng):
+        if not NaturalMobSpawner._is_loaded(world, chunk_x * 16, chunk_z * 16):
+            return 0
+        next_int = NaturalMobSpawner._next_int
+        x = chunk_x * 16 + next_int(rng, 16)
+        y = next_int(rng, 128)
+        z = chunk_z * 16 + next_int(rng, 16)
+        if self._opaque(world, x, y, z):
+            return 0
+        if world.get_block_type(x, y, z) not in ("water", "flowing_water"):
+            return 0
+
+        spawned_in_group = 0
+        spawn_players = players
+        spawn_x = float(getattr(world, "spawn_x", 0.0))
+        spawn_y = float(getattr(world, "spawn_y", 64.0))
+        spawn_z = float(getattr(world, "spawn_z", 0.0))
+        for _group in range(3):
+            hx, hy, hz = x, y, z
+            for _hop in range(4):
+                hx += next_int(rng, 6) - next_int(rng, 6)
+                hz += next_int(rng, 6) - next_int(rng, 6)
+                if world.get_block_type(hx, hy, hz) not in ("water", "flowing_water"):
+                    continue
+                if self._opaque(world, hx, hy + 1, hz):
+                    continue
+                fx, fy, fz = float(hx) + 0.5, float(hy), float(hz) + 0.5
+                too_close = False
+                for other_player in spawn_players:
+                    dx = fx - float(other_player.pos[0])
+                    dy = fy - float(other_player.pos[1])
+                    dz = fz - float(other_player.pos[2])
+                    if dx * dx + dy * dy + dz * dz < 576.0:
+                        too_close = True
+                        break
+                if too_close:
+                    continue
+                dx, dy, dz = fx - spawn_x, fy - spawn_y, fz - spawn_z
+                if dx * dx + dy * dy + dz * dz < 576.0:
+                    continue
+                next_float = getattr(rng, "next_float", None)
+                yaw = float(next_float()) * 360.0 if callable(next_float) else float(rng.random()) * 360.0
+                entity = self.entity_type((fx, fy, fz), yaw=yaw, rng=rng)
+                if not entity.get_can_spawn_here(fx, fy, fz):
+                    continue
+                world.spawn_entity(entity)
+                spawned_in_group += 1
+                if spawned_in_group >= int(getattr(entity, "MAX_SPAWN_GROUP", 4)):
+                    return spawned_in_group
+        return spawned_in_group
+
+    def update(self, world, rng):
+        if (bool(getattr(world, "debug_world", False))
+                or bool(getattr(world, "is_hell_world", False))
+                or bool(getattr(world, "_multiplayer_client_world", False))):
+            return 0
+        players = self._players(world)
+        if not players:
+            return 0
+
+        eligible_set = set()
+        for player in players:
+            eligible_set.update(self._chunk_helper._eligible_chunks(world, player))
+        eligible = _java_chunk_order(eligible_set)
+        cap = self.MAX_PER_256_CHUNKS * len(eligible) // 256
+        count = sum(
+            1 for entity in getattr(world, "entities", ())
+            if isinstance(entity, self.entity_type) and not getattr(entity, "dead", False)
+        )
+        if count > cap:
+            return 0
+
+        total_spawned = 0
+        for cx, cz in eligible:
+            total_spawned += self._try_chunk(world, players, cx, cz, rng)
+        return total_spawned
+
+
 _SPAWNERS = {}
 
 
@@ -268,6 +389,7 @@ def spawn_natural_mobs(world, rng):
         from game.entities.slime import Slime
         from game.entities.animal import Animal
         from game.entities.mob import IMobs
+        from game.entities.squid import Squid
 
         spawners = _SPAWNERS["alpha"] = (
             NaturalMobSpawner(
@@ -275,6 +397,7 @@ def spawn_natural_mobs(world, rng):
                 count_type=IMobs,
             ),
             NaturalMobSpawner(20, (Sheep, Pig, Cow, Chicken), count_type=Animal),
+            NaturalWaterMobSpawner(Squid),
         )
     for spawner in spawners:
         spawner.update(world, rng)

@@ -232,7 +232,7 @@ class ItemRendererMixin:
         if not defn or Item.block_texture is None:
             return
 
-        faces = defn.get("faces", 0)
+        faces = Item.block_faces(self.item.id, self.item.damage)
 
         def face_idx(slot):
             if slot == 3 and self.item.id == "grass_block" and isinstance(faces, list):
@@ -497,7 +497,7 @@ class ItemRendererMixin:
         defn = Item.block_defs.get(self.item.id)
         if not defn or Item.block_texture is None:
             return
-        face_value = defn.get("faces", 0)
+        face_value = Item.block_faces(self.item.id, self.item.damage)
         if isinstance(face_value, list):
             tile_index = face_value[3] if len(face_value) > 3 else face_value[0]
         else:
@@ -561,7 +561,7 @@ class ItemRendererMixin:
         texture = Item.block_texture
         if not defn or texture is None:
             return
-        face_value = defn.get("faces", 1)
+        face_value = Item.block_faces(self.item.id, self.item.damage, default=1)
         tile_index = face_value[0] if isinstance(face_value, list) else int(face_value)
         u, v = self._block_uv(tile_index)
         t = BLOCK_ATLAS_TILE
@@ -633,14 +633,14 @@ class ItemRendererMixin:
         block_def = Item.block_defs.get(self.item.id)
         use_item_sprite = item_def is not None and "texture" in item_def
         if use_item_sprite:
-            atlas_index = item_def.get("texture", 0)
+            atlas_index = Item.icon_texture(self.item.id, self.item.damage)
             if isinstance(atlas_index, list):
                 atlas_index = atlas_index[0]
             texture = Item.item_texture
             t = ITEM_ATLAS_TILE
             use_block_uv = False
         elif block_def is not None:
-            faces = block_def.get("faces", 0)
+            faces = Item.block_faces(self.item.id, self.item.damage)
             atlas_index = faces[0] if isinstance(faces, list) else faces
             texture = Item.block_texture
             t = BLOCK_ATLAS_TILE

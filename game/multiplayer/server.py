@@ -840,7 +840,7 @@ class MultiplayerServer:
                 return
             if msg_type == "entity_interact":
                 action = str(msg.get("action") or "")
-                if action != "furnace_fuel":
+                if action not in {"furnace_fuel", "milk_cow", "milk_squid", "dye_sheep"}:
                     return
                 limit = 20
                 packet_type = "entity_interact_request"
@@ -886,11 +886,9 @@ class MultiplayerServer:
                 "strafe": max(-1.0, min(1.0, strafe)),
                 "yaw": max(-3600.0, min(3600.0, yaw)),
             })
-        elif msg_type in {"bucket_use", "jukebox_use"}:
+        elif msg_type == "item_use":
             action = str(msg.get("action") or "")
-            allowed = {"bucket_use": {"pickup", "pour"},
-                       "jukebox_use": {"insert", "eject"}}[msg_type]
-            if action not in allowed:
+            if action not in {"bonemeal", "cake_eat"}:
                 return
             try:
                 x, y, z = int(msg.get("x")), int(msg.get("y")), int(msg.get("z"))
@@ -907,13 +905,69 @@ class MultiplayerServer:
                 client.event_window_start = now
                 client.event_window_count = 0
             client.event_window_count += 1
+            if client.event_window_count > 6:
+                return
+            self._push({
+                "t": "item_use_request", "id": client.player_id,
+                "action": action, "x": x, "y": y, "z": z,
+            })
+        elif msg_type == "note_block_use":
+            action = str(msg.get("action") or "")
+            if action not in {"play", "pitch"}:
+                return
+            try:
+                x, y, z = int(msg.get("x")), int(msg.get("y")), int(msg.get("z"))
+            except (TypeError, ValueError, OverflowError):
+                return
+            if not (0 <= y < 256 and max(abs(x), abs(z)) <= _MAX_COORD):
+                return
+            with self._lock:
+                dx, dy, dz = x + 0.5 - client.x, y + 0.5 - client.y, z + 0.5 - client.z
+            if dx * dx + dy * dy + dz * dz > 8.0 * 8.0:
+                return
+            now = time.monotonic()
+            if now - client.event_window_start >= 1.0:
+                client.event_window_start = now
+                client.event_window_count = 0
+            client.event_window_count += 1
+            if client.event_window_count > 20:
+                return
+            self._push({
+                "t": "note_block_use_request", "id": client.player_id,
+                "action": action, "x": x, "y": y, "z": z,
+            })
+        elif msg_type in {"bucket_use", "jukebox_use"}:
+            action = str(msg.get("action") or "")
+            allowed = {"bucket_use": {"pickup", "pour", "milk", "drink"},
+                       "jukebox_use": {"insert", "eject"}}[msg_type]
+            if action not in allowed:
+                return
+            if action != "drink":
+                try:
+                    x, y, z = int(msg.get("x")), int(msg.get("y")), int(msg.get("z"))
+                except (TypeError, ValueError, OverflowError):
+                    return
+                if not (0 <= y < 256 and max(abs(x), abs(z)) <= _MAX_COORD):
+                    return
+                with self._lock:
+                    dx, dy, dz = x + 0.5 - client.x, y + 0.5 - client.y, z + 0.5 - client.z
+                if dx * dx + dy * dy + dz * dz > 8.0 * 8.0:
+                    return
+            now = time.monotonic()
+            if now - client.event_window_start >= 1.0:
+                client.event_window_start = now
+                client.event_window_count = 0
+            client.event_window_count += 1
             limit = 8 if msg_type == "bucket_use" else 6
             if client.event_window_count > limit:
                 return
-            self._push({
+            request = {
                 "t": f"{msg_type}_request", "id": client.player_id,
-                "action": action, "x": x, "y": y, "z": z,
-            })
+                "action": action,
+            }
+            if action != "drink":
+                request.update({"x": x, "y": y, "z": z})
+            self._push(request)
         elif msg_type == "player_attack":
             try:
                 target_id = int(msg.get("target_id"))
@@ -1044,6 +1098,24 @@ class MultiplayerServer:
             if abs(cx) > max_chunk or abs(cz) > max_chunk:
                 return
             self._push({"t": "chunk_request", "id": client.player_id, "cx": cx, "cz": cz})
+        elif msg_type == "hotbar_select":
+            try:
+                slot = int(msg.get("slot"))
+            except (TypeError, ValueError, OverflowError):
+                return
+            if not 0 <= slot < 9:
+                return
+            now = time.monotonic()
+            if now - client.event_window_start >= 1.0:
+                client.event_window_start = now
+                client.event_window_count = 0
+            client.event_window_count += 1
+            if client.event_window_count > 80:
+                return
+            self._push({
+                "t": "hotbar_select_request", "id": client.player_id,
+                "slot": slot,
+            })
         elif msg_type == "inventory":
             state = P.normalize_inventory_state(msg)
             try:
@@ -1087,7 +1159,7 @@ class MultiplayerServer:
                 target = str(msg.get("target") or "")
                 slot = int(msg.get("slot"))
                 button = int(msg.get("button"))
-                if target in {"chest", "furnace"}:
+                if target in {"chest", "furnace", "dispenser"}:
                     x, y, z = int(msg.get("x")), int(msg.get("y")), int(msg.get("z"))
                 elif target == "minecart":
                     entity_id = int(msg.get("entity_id"))
@@ -1096,12 +1168,12 @@ class MultiplayerServer:
             except (TypeError, ValueError, OverflowError):
                 return
             if (sequence <= 0
-                    or target not in {"player", "chest", "furnace", "minecart", "craft2", "craft3"}
+                    or target not in {"player", "chest", "furnace", "dispenser", "minecart", "craft2", "craft3"}
                     or not 0 <= slot < 64 or button not in (0, 1)):
                 return
             if target == "minecart" and not 1 <= entity_id <= 2**31 - 1:
                 return
-            if target in {"chest", "furnace"} and not (
+            if target in {"chest", "furnace", "dispenser"} and not (
                 -30_000_000 <= x <= 30_000_000 and 0 <= y < 256
                 and -30_000_000 <= z <= 30_000_000
             ):
@@ -1117,7 +1189,7 @@ class MultiplayerServer:
                 client.event_window_count += 1
                 if client.event_window_count > 80:
                     return
-                if target in {"chest", "furnace"}:
+                if target in {"chest", "furnace", "dispenser"}:
                     dx, dy, dz = x + 0.5 - client.x, y + 0.5 - client.y, z + 0.5 - client.z
                     if dx * dx + dy * dy + dz * dz > 8.0 * 8.0:
                         return
@@ -1125,7 +1197,7 @@ class MultiplayerServer:
                 "t": "inventory_transaction_request", "id": client.player_id,
                 "seq": sequence, "target": target, "slot": slot, "button": button,
             }
-            if target in {"chest", "furnace"}:
+            if target in {"chest", "furnace", "dispenser"}:
                 event.update({"x": x, "y": y, "z": z})
             elif target == "minecart":
                 event["entity_id"] = entity_id

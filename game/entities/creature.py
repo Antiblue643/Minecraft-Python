@@ -171,13 +171,10 @@ class Creature(Mob):
         found = False
         best_x = best_y = best_z = -1
         best_weight = -99999.0
-        base_x = self.pos[0] + 0.5
-        base_y = self.pos[1] + 0.5
-        base_z = self.pos[2] + 0.5
-        for _ in range(50):
-            cx = math.floor(base_x + self._rand_int(11) - 5.0)
-            cy = math.floor(base_y + self._rand_int(7) - 3.0)
-            cz = math.floor(base_z + self._rand_int(11) - 5.0)
+        for _ in range(10):
+            cx = math.floor(self.pos[0] + 0.5 + self._rand_int(13) - 6.0)
+            cy = math.floor(self.pos[1] + 0.5 + self._rand_int(7) - 3.0)
+            cz = math.floor(self.pos[2] + 0.5 + self._rand_int(13) - 6.0)
             weight = self.get_block_path_weight(cx, cy, cz)
             if weight > best_weight:
                 best_weight = weight
@@ -185,7 +182,7 @@ class Creature(Mob):
                 found = True
         if found:
             self.path_to_entity = get_path_to_xyz(
-                Entity.world, self, best_x, best_y, best_z, self.PATH_SEARCH_DISTANCE,
+                Entity.world, self, best_x, best_y, best_z, 10.0,
             )
 
     def _wrap_yaw_delta(self, delta: float) -> float:
@@ -205,29 +202,30 @@ class Creature(Mob):
                 self.attack_entity(self.player_to_attack, distance)
 
         if (
-            not self.has_attacked
-            and self.player_to_attack is not None
-            and (self.path_to_entity is None or self._rand_int(20) == 0)
+            self.has_attacked
+            or self.player_to_attack is None
+            or (self.path_to_entity is not None and self._rand_int(20) != 0)
         ):
+            if (
+                (self.path_to_entity is None and self._rand_int(80) == 0)
+                or self._rand_int(80) == 0
+            ):
+                self._choose_wander_path()
+        else:
             self.path_to_entity = self._path_to_target()
-        elif not self.has_attacked and (
-            (self.path_to_entity is None and self._rand_int(180) == 0)
-            or self._rand_int(120) == 0
-        ):
-            self._choose_wander_path()
 
         feet_cell = math.floor(self.pos[1] + 0.5 + 1e-4)
         in_fluid = bool(self.in_water or self.in_lava)
-
         if self.path_to_entity is not None and self._rand_int(100) != 0:
             waypoint = self.path_to_entity.get_position(self)
-            radius_sq = (float(self.size[0]) * 2.0) ** 2
+            radius = float(self.size[0]) * 2.0
+            radius_sq = radius * radius
             while waypoint is not None:
-                wx, wy, wz = waypoint
-                dist_sq = ((wx - self.pos[0]) ** 2
-                           + (wy - (self.pos[1] + 0.5)) ** 2
-                           + (wz - self.pos[2]) ** 2)
-                if not (dist_sq < radius_sq and wy <= feet_cell):
+                wx, _wy, wz = waypoint
+                horizontal_dist_sq = (
+                    (wx - self.pos[0]) ** 2 + (wz - self.pos[2]) ** 2
+                )
+                if horizontal_dist_sq >= radius_sq:
                     break
                 self.path_to_entity.increment_path_index()
                 if self.path_to_entity.is_finished():
@@ -257,12 +255,14 @@ class Creature(Mob):
                     forward = self.move_forward
                     self.move_strafing = -math.sin(angle) * forward
                     self.move_forward = math.cos(angle) * forward
-                if vertical > 0.0 or (wy - self.pos[1]) > 0.5:
+                if vertical > 0.0:
                     self.is_jumping = True
             else:
                 self.move_forward = 0.0
                 self.move_strafing = 0.0
 
+            if self.horizontal_collision:
+                self.is_jumping = True
             if self._rng.random() < 0.8 and in_fluid:
                 self.is_jumping = True
 
@@ -272,6 +272,6 @@ class Creature(Mob):
                 if vertical_gap > 0.6:
                     self.is_jumping = True
         else:
+            Mob._update_player_action_state(self)
             self.path_to_entity = None
             self._pending_path_yaw = None
-            self._idle_look()

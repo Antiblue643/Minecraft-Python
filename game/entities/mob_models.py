@@ -472,6 +472,49 @@ class ModelSkeleton(ModelBiped):
         )
 
 
+
+class ModelSquid:
+
+    def __init__(self):
+        self.body = ModelPart(
+            0, 0, -6, -8, -6, 12, 16, 12,
+            texture_width=64, texture_height=32,
+        )
+        self.body.set_rotation_point(0.0, 8.0, 0.0)
+        tentacles = []
+        for index in range(8):
+            angle = index * math.tau / 8.0
+            tentacle = ModelPart(
+                48, 0, -1, 0, -1, 2, 18, 2,
+                texture_width=64, texture_height=32,
+            )
+            tentacle.set_rotation_point(
+                math.cos(angle) * 5.0, 15.0, math.sin(angle) * 5.0,
+            )
+            tentacle.rotate_angle_y = (
+                index * -math.tau / 8.0 + math.pi * 0.5
+            )
+            tentacles.append(tentacle)
+        self.tentacles = tuple(tentacles)
+        self.parts = (self.body,) + self.tentacles
+
+    def set_rotation_angles(
+        self, limb_swing, limb_amount, tentacle_angle, net_head_yaw, head_pitch,
+    ):
+        for tentacle in self.tentacles:
+            tentacle.rotate_angle_x = float(tentacle_angle)
+
+    def render(
+        self, limb_swing, limb_amount, age_in_ticks, net_head_yaw, tentacle_angle,
+        scale: float = _UNIT,
+    ) -> None:
+        self.set_rotation_angles(
+            limb_swing, limb_amount, age_in_ticks, net_head_yaw, tentacle_angle,
+        )
+        for part in self.parts:
+            part.render(scale)
+
+
 class ModelGhast:
 
     def __init__(self):
@@ -531,6 +574,7 @@ def _get_model(kind: str):
             "zombie": ModelBiped,
             "giant": ModelBiped,
             "ghast": ModelGhast,
+            "squid": ModelSquid,
         }
         _model_cache[kind] = factories[kind]()
     return _model_cache[kind]
@@ -604,6 +648,19 @@ def render_mob_model(
         net_head -= 360.0
 
     model = _get_model(model_kind)
+    squid_tentacle_angle = 0.0
+    squid_yaw_animation = 0.0
+    if model_kind == "squid":
+        squid_tentacle_angle = (
+            float(getattr(entity, "prev_tentacle_angle", 0.0))
+            + (float(getattr(entity, "tentacle_angle", 0.0))
+               - float(getattr(entity, "prev_tentacle_angle", 0.0))) * partial
+        )
+        squid_yaw_animation = (
+            float(getattr(entity, "prev_body_yaw_animation", 0.0))
+            + (float(getattr(entity, "body_yaw_animation", 0.0))
+               - float(getattr(entity, "prev_body_yaw_animation", 0.0))) * partial
+        )
     model_scale = float(getattr(entity, "model_scale", 1.0)) if model_kind == "giant" else 1.0
     ghast_scale = None
     if model_kind == "ghast":
@@ -621,7 +678,14 @@ def render_mob_model(
     enable_standard_item_lighting()
     glEnable(GL_NORMALIZE)
     glTranslatef(dx, dy, dz)
-    glRotatef(body_yaw, 0.0, 1.0, 0.0)
+    if model_kind == "squid":
+        glTranslatef(0.0, 0.5, 0.0)
+        glRotatef(180.0 - yaw, 0.0, 1.0, 0.0)
+        glRotatef(pitch, 1.0, 0.0, 0.0)
+        glRotatef(squid_yaw_animation, 0.0, 1.0, 0.0)
+        glTranslatef(0.0, -1.2, 0.0)
+    else:
+        glRotatef(body_yaw, 0.0, 1.0, 0.0)
     if spawner_display:
         glTranslatef(0.0, 0.4, 0.0)
         glRotatef(SPAWNER_DISPLAY_PITCH, 1.0, 0.0, 0.0)
@@ -629,7 +693,7 @@ def render_mob_model(
         glScalef(7.0 / 16.0, 7.0 / 16.0, 7.0 / 16.0)
 
     death_time = float(getattr(entity, "death_time", 0.0))
-    if death_time > 0.0:
+    if death_time > 0.0 and model_kind != "squid":
         death_progress = max(
             0.0, min(1.0, ((death_time + partial - 1.0) / 20.0 * 1.6) ** 0.5)
         )
@@ -684,7 +748,12 @@ def render_mob_model(
     if model_kind in ("skeleton", "zombie", "giant"):
         render_kwargs["raised_arms"] = raised
         render_kwargs["is_riding"] = getattr(entity, "riding_entity", None) is not None
-    model.render(limb_swing, limb_amount, age, net_head, -pitch, _UNIT, **render_kwargs)
+    model.render(
+        limb_swing, limb_amount,
+        squid_tentacle_angle if model_kind == "squid" else age,
+        net_head, -pitch,
+        _UNIT, **render_kwargs,
+    )
 
     if model_kind == "skeleton":
         from .player_model import _render_third_person_held_item
@@ -720,7 +789,16 @@ def render_mob_model(
         try:
             entity.skin_path = extra_skin_path
             _bind_skin(entity)
-            glColor4f(brightness, brightness, brightness, 1.0)
+            if model_kind == "sheep" and extra_pass_kind == "sheep_fur":
+                from .sheep import Sheep
+                color_index = int(getattr(entity, "fleece_color", 0)) & 15
+                red, green, blue = Sheep.FUR_COLORS[color_index]
+                glColor4f(
+                    brightness * red, brightness * green,
+                    brightness * blue, 1.0,
+                )
+            else:
+                glColor4f(brightness, brightness, brightness, 1.0)
             extra = _get_model(extra_pass_kind)
             extra.render(limb_swing, limb_amount, age, net_head, -pitch, _UNIT)
         finally:
@@ -751,7 +829,11 @@ def render_mob_model(
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
         glDepthFunc(GL_EQUAL)
         glColor4f(brightness, 0.0, 0.0, 0.4)
-        model.render(limb_swing, limb_amount, age, net_head, -pitch, _UNIT, **render_kwargs)
+        model.render(
+            limb_swing, limb_amount,
+            squid_tentacle_angle if model_kind == "squid" else age,
+            net_head, -pitch, _UNIT, **render_kwargs,
+        )
         if model_kind == "slime":
             _get_model("slime_shell").render(limb_swing, limb_amount, age, net_head, -pitch, _UNIT)
         if extra_pass_kind:
@@ -809,6 +891,11 @@ def draw_living_with_model(entity, model_kind: str, **kwargs) -> None:
         pass
 
     render_y = float(getattr(entity, "render_y_offset", 0.0))
+    head_pitch = float(getattr(entity, "rotation_pitch", 0.0))
+    if model_kind == "squid":
+        previous_pitch = float(getattr(entity, "prev_rotation_pitch", head_pitch))
+        head_pitch = previous_pitch + (head_pitch - previous_pitch) * partial
+
     render_mob_model(
         entity,
         x,
@@ -818,7 +905,7 @@ def draw_living_with_model(entity, model_kind: str, **kwargs) -> None:
         partial,
         model_kind=model_kind,
         head_yaw=head_yaw,
-        head_pitch=float(getattr(entity, "rotation_pitch", 0.0)),
+        head_pitch=head_pitch,
         **kwargs,
     )
 

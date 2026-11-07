@@ -160,6 +160,14 @@ class MultiplayerClient:
             self.send(P.inventory_packet(self.player_id, state, base_revision))
             self.inventory_send_revision = max(self.inventory_send_revision, base_revision + 1)
 
+    def send_hotbar_selection(self, slot: int) -> None:
+        try:
+            selected = int(slot)
+        except (TypeError, ValueError, OverflowError):
+            return
+        if self.player_id > 0 and 0 <= selected < 9:
+            self.send({"t": "hotbar_select", "slot": selected})
+
     def send_inventory_transaction(
         self, sequence: int, target: str, slot: int, button: int, *, position=None,
         entity_id=None,
@@ -221,11 +229,27 @@ class MultiplayerClient:
         except (TypeError, ValueError, OverflowError):
             return
 
+    def send_item_use(self, action: str, x: int, y: int, z: int) -> None:
+        if self.player_id <= 0:
+            return
+        try:
+            self.send(P.item_use_request(action, x, y, z))
+        except (TypeError, ValueError, OverflowError):
+            return
+
     def send_jukebox_use(self, action: str, x: int, y: int, z: int) -> None:
         if self.player_id <= 0:
             return
         try:
             self.send(P.jukebox_use_request(action, x, y, z))
+        except (TypeError, ValueError, OverflowError):
+            return
+
+    def send_note_block_use(self, action: str, x: int, y: int, z: int) -> None:
+        if self.player_id <= 0:
+            return
+        try:
+            self.send(P.note_block_use_request(action, x, y, z))
         except (TypeError, ValueError, OverflowError):
             return
 

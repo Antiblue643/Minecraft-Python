@@ -38,8 +38,21 @@ def _is_opaque(block, is_opaque: Callable) -> bool:
     return is_opaque(block)
 
 
-def generate_alpha_tree(world, x, base_y, z, rng, is_opaque, world_height=128):
-    height = rng.randrange(3) + 4  
+def _set_block_with_meta(world, x, y, z, block_type, meta=0):
+    try:
+        world.set_block(x, y, z, block_type, meta=int(meta) & 15)
+    except TypeError:
+        world.set_block(x, y, z, block_type)
+
+
+def _rand_int(rng, bound):
+    next_int = getattr(rng, "next_int", None)
+    return int(next_int(int(bound))) if callable(next_int) else int(rng.randrange(int(bound)))
+
+
+def generate_alpha_tree(world, x, base_y, z, rng, is_opaque, world_height=128,
+                        *, log_meta=0, leaves_meta=0, height_bonus=0):
+    height = _rand_int(rng, 3) + 4 + int(height_bonus)
     if base_y < 1 or base_y + height + 1 > world_height:
         return False
 
@@ -90,14 +103,93 @@ def generate_alpha_tree(world, x, base_y, z, rng, is_opaque, world_height=128):
                     continue
                 existing = world.get_block_type(bx, cy, bz)
                 if not _is_opaque(existing, is_opaque):
-                    world.set_block(bx, cy, bz, _LEAVES)
+                    _set_block_with_meta(world, bx, cy, bz, _LEAVES, leaves_meta)
 
     for i in range(height):
         existing = world.get_block_type(x, base_y + i, z)
         if existing is None or existing == _LEAVES:
-            world.set_block(x, base_y + i, z, _LOG)
+            _set_block_with_meta(world, x, base_y + i, z, _LOG, log_meta)
 
     return True
+
+
+def generate_spruce_taiga_tree(world, x, base_y, z, rng, is_opaque=None,
+                               world_height=128, *, variant=1):
+    _ = is_opaque
+    if variant == 1:
+        height = _rand_int(rng, 5) + 7
+        trunk_start = height - _rand_int(rng, 2) - 3
+        crown_height = height - trunk_start
+        crown_radius = 1 + _rand_int(rng, crown_height + 1)
+    else:
+        height = _rand_int(rng, 4) + 6
+        trunk_start = 1 + _rand_int(rng, 2)
+        crown_height = height - trunk_start
+        crown_radius = 2 + _rand_int(rng, 2)
+    if base_y < 1 or base_y + height + 1 > int(world_height):
+        return False
+
+    for cy in range(base_y, base_y + height + 2):
+        radius = 0 if cy - base_y < trunk_start else crown_radius
+        for bx in range(x - radius, x + radius + 1):
+            for bz in range(z - radius, z + radius + 1):
+                block = world.get_block_type(bx, cy, bz)
+                if block is not None and block != _LEAVES:
+                    return False
+
+    if world.get_block_type(x, base_y - 1, z) not in (_GRASS, _DIRT):
+        return False
+
+    _set_block_with_meta(world, x, base_y - 1, z, _DIRT, 0)
+
+    if variant == 1:
+        radius = 0
+        for cy in range(base_y + height, base_y + trunk_start - 1, -1):
+            for bx in range(x - radius, x + radius + 1):
+                for bz in range(z - radius, z + radius + 1):
+                    if ((abs(bx - x) != radius or abs(bz - z) != radius or radius <= 0)
+                            and world.get_block_type(bx, cy, bz) != _LEAVES):
+                        if world.get_block_type(bx, cy, bz) is None:
+                            _set_block_with_meta(world, bx, cy, bz, _LEAVES, 1)
+            if radius >= 1 and cy == base_y + trunk_start + 1:
+                radius -= 1
+            elif radius < crown_radius:
+                radius += 1
+        trunk_length = height - 1
+    else:
+        radius = _rand_int(rng, 2)
+        radius_step = 1
+        radius_prev = 0
+        for layer in range(crown_height + 1):
+            cy = base_y + height - layer
+            for bx in range(x - radius, x + radius + 1):
+                for bz in range(z - radius, z + radius + 1):
+                    if ((abs(bx - x) != radius or abs(bz - z) != radius or radius <= 0)
+                            and world.get_block_type(bx, cy, bz) is None):
+                        _set_block_with_meta(world, bx, cy, bz, _LEAVES, 1)
+            if radius >= radius_step:
+                radius = radius_prev
+                radius_prev = 1
+                radius_step += 1
+                if radius_step > crown_radius:
+                    radius_step = crown_radius
+            else:
+                radius += 1
+        trunk_length = height - _rand_int(rng, 3)
+
+    for dy in range(max(0, trunk_length)):
+        py = base_y + dy
+        existing = world.get_block_type(x, py, z)
+        if existing is None or existing == _LEAVES:
+            _set_block_with_meta(world, x, py, z, _LOG, 1)
+    return True
+
+
+def generate_birch_tree(world, x, base_y, z, rng, is_opaque, world_height=128):
+    return generate_alpha_tree(
+        world, x, base_y, z, rng, is_opaque, world_height,
+        log_meta=2, leaves_meta=2, height_bonus=1,
+    )
 
 
 class _BigTreeGenerator:

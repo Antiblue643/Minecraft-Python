@@ -15,3 +15,4 @@ debug.timeMidnight=Time set to midnight
 debug.timeNoon=Time set to noon
 debug.dayCyclePaused=Day cycle paused
 debug.dayCycleResumed=Day cycle resumed
+debug.timeReset=Day cycle reset

@@ -436,6 +436,17 @@ class RedstoneSystem:
                 return True
         return False
 
+    def is_block_powered(self, x, y, z) -> bool:
+        if self.dirty and not self._updating:
+            self.recompute()
+        wire_positions = {
+            pos for pos, typ in self.components.items()
+            if typ == WIRE and self.world.get_block_type(*pos) == WIRE
+        }
+        wire_power = self._solve_wire_power(wire_positions)
+        pos = (int(x), int(y), int(z))
+        return self._block_receives_power(pos, wire_power)
+
     def _door_powered(self, door_pos, wire_power):
         world = self.world
         x, y, z = door_pos
@@ -578,9 +589,22 @@ class RedstoneSystem:
                 if not changed:
                     break
             self.dirty = False
+            self._refresh_note_block_edges(wire_power)
             self._refresh_rail_junctions_from_power()
         finally:
             self._updating = False
+
+    def _refresh_note_block_edges(self, wire_power):
+        world = self.world
+        if bool(getattr(world, "_multiplayer_client_world", False)):
+            return
+        for pos, tile_entity in tuple(getattr(world, "tile_entities", {}).items()):
+            update_state = getattr(tile_entity, "update_redstone_state", None)
+            if not callable(update_state) or world.get_block_type(*pos) != "note_block":
+                continue
+
+            powered = self._block_receives_power(pos, wire_power)
+            update_state(powered)
 
     def _refresh_rail_junctions_from_power(self):
         try:

@@ -15,6 +15,7 @@ _SPAWNER_MODELS = {
     legacy_entity_id("giant"): ("game.entities.giant", "Giant", "giant"),
     legacy_entity_id("slime"): ("game.entities.slime", "Slime", "slime"),
     legacy_entity_id("ghast"): ("game.entities.ghast", "Ghast", "ghast"),
+    legacy_entity_id("squid"): ("game.entities.squid", "Squid", "squid"),
 }
 
 

@@ -107,6 +107,194 @@ class TileEntityChest(TileEntity):
         return te
 
 
+class TileEntityDispenser(TileEntity):
+
+    SIZE = 9
+    stack_limit = 64
+    TICK_DELAY = 4
+    _DIRECTIONS = {
+        2: (0, 0, -1), 3: (0, 0, 1),
+        4: (-1, 0, 0), 5: (1, 0, 0),
+    }
+
+    def __init__(self, world, x, y, z):
+        super().__init__(world, x, y, z)
+        self.contents = [None] * self.SIZE
+        self._was_powered = False
+        self._scheduled_tick = None
+
+    def get_stack(self, slot):
+        return self.contents[slot] if 0 <= int(slot) < self.SIZE else None
+
+    def set_stack(self, slot, stack):
+        if 0 <= int(slot) < self.SIZE:
+            self.contents[int(slot)] = stack
+
+    def get_inv_name(self):
+        return "Dispenser"
+
+    def can_interact_with(self, player):
+        if self.world is None or self.world.get_tile_entity(self.x, self.y, self.z) is not self:
+            return False
+        dx = float(player.pos[0]) - (self.x + 0.5)
+        dy = float(player.pos[1]) - (self.y + 0.5)
+        dz = float(player.pos[2]) - (self.z + 0.5)
+        return dx * dx + dy * dy + dz * dz <= 64.0
+
+    def on_removed(self):
+        if self.world is not None and not bool(getattr(self.world, "_multiplayer_client_world", False)):
+            for stack in self.contents:
+                if stack is not None and stack.count > 0:
+                    self.world.spawn_item_stack(self.x, self.y, self.z, stack)
+        self.contents = [None] * self.SIZE
+
+    def _rng(self):
+        return getattr(self.world, "_tick_rng", None) or random
+
+    def _play_dispense_click(self, pitch: float) -> None:
+        player = getattr(self.world, "sound_player", None)
+        if callable(player):
+            try:
+                player(
+                    "random.click", volume=1.0, pitch=float(pitch),
+                    position=(self.x + 0.5, self.y + 0.5, self.z + 0.5),
+                )
+            except Exception:
+                pass
+
+    def dispense_one(self):
+        if self.world is None or bool(getattr(self.world, "_multiplayer_client_world", False)):
+            return False
+        occupied = [i for i, stack in enumerate(self.contents)
+                    if stack is not None and int(getattr(stack, "count", 0)) > 0]
+        if not occupied:
+            self._play_dispense_click(1.2)
+            return False
+
+        rng = self._rng()
+        slot = rng.choice(occupied)
+        stack = self.contents[slot]
+        emitted = ItemStack(stack.id, 1, int(getattr(stack, "damage", 0)))
+        stack.count -= 1
+        if stack.count <= 0:
+            self.contents[slot] = None
+
+        meta = int(self.world.get_metadata(self.x, self.y, self.z)) & 7
+        dx, dy, dz = self._DIRECTIONS.get(meta, (0, 0, 1))
+        face_offset = 0.51
+        spawn_pos = (
+            self.x + dx * face_offset,
+            float(self.y),
+            self.z + dz * face_offset,
+        )
+        gaussian = getattr(rng, "gauss", lambda _mean, _stddev: 0.0)
+        projectile = emitted.id in {"arrow", "egg", "snowball"}
+        try:
+            if projectile:
+                norm = (dx * dx + 0.1 * 0.1 + dz * dz) ** 0.5
+                heading = (
+                    dx / norm + gaussian(0.0, 0.045),
+                    0.1 / norm + gaussian(0.0, 0.045),
+                    dz / norm + gaussian(0.0, 0.045),
+                )
+                velocity = tuple(component * 1.1 for component in heading)
+                if emitted.id == "arrow":
+                    from game.entities.arrow import ArrowEntity
+                    entity = ArrowEntity(self.world, spawn_pos, velocity=velocity)
+                    sound, pitch = "random.bow", 1.2
+                elif emitted.id == "egg":
+                    from game.entities.egg import EggEntity
+                    entity = EggEntity(self.world, spawn_pos, velocity=velocity)
+                    sound, pitch = "random.bow", 1.2
+                else:
+                    from game.entities.snowball import SnowballEntity
+                    entity = SnowballEntity(self.world, spawn_pos, velocity=velocity)
+                    sound, pitch = "random.bow", 1.2
+            else:
+                from game.entities.item import ItemEntity
+                speed = rng.random() * 0.1 + 0.2
+                velocity = (
+                    dx * speed + gaussian(0.0, 0.045),
+                    0.2 + gaussian(0.0, 0.045),
+                    dz * speed + gaussian(0.0, 0.045),
+                )
+                item_pos = (spawn_pos[0], spawn_pos[1] - 0.3, spawn_pos[2])
+                entity = ItemEntity(emitted, item_pos, velocity=velocity, pickup_delay=10)
+                sound, pitch = "random.click", 1.0
+            self.world.spawn_entity(entity)
+        except Exception:
+            stack.count += 1
+            self.contents[slot] = stack
+            return False
+
+        self._play_dispense_click(pitch) if sound == "random.click" else self._play_projectile_sound(sound, pitch)
+        particle = getattr(self.world, "spawn_particle", None)
+        if callable(particle):
+            for _ in range(10):
+                spread = rng.random() * 0.2 + 0.01
+                px = spawn_pos[0] + dx * 0.01 + (rng.random() - 0.5) * dz * 0.5
+                py = spawn_pos[1] + (rng.random() - 0.5) * 0.5
+                pz = spawn_pos[2] + dz * 0.01 + (rng.random() - 0.5) * dx * 0.5
+                particle(
+                    "smoke", px, py, pz,
+                    dx * spread + gaussian(0.0, 0.01),
+                    -0.03 + gaussian(0.0, 0.01),
+                    dz * spread + gaussian(0.0, 0.01),
+                )
+        return True
+
+    def _play_projectile_sound(self, name: str, pitch: float) -> None:
+        player = getattr(self.world, "sound_player", None)
+        if callable(player):
+            try:
+                player(name, volume=1.0, pitch=float(pitch),
+                       position=(self.x, self.y, self.z))
+            except Exception:
+                pass
+
+    def update(self):
+        if self.world is None or bool(getattr(self.world, "_multiplayer_client_world", False)):
+            return False
+        redstone = getattr(self.world, "_redstone_system", None)
+        if redstone is None:
+            return False
+        powered = redstone.is_block_powered(self.x, self.y, self.z) or redstone.is_block_powered(
+            self.x, self.y + 1, self.z,
+        )
+        now = int(getattr(self.world, "world_time", 0) or 0)
+        if not powered:
+            self._was_powered = False
+            self._scheduled_tick = None
+            return False
+        if not self._was_powered:
+            self._was_powered = True
+            self._scheduled_tick = now + self.TICK_DELAY
+            return False
+        if self._scheduled_tick is not None and now >= self._scheduled_tick:
+            self._scheduled_tick = None
+            return self.dispense_one()
+        return False
+
+    def to_dict(self):
+        items = []
+        for i, stack in enumerate(self.contents):
+            if stack is not None and stack.count > 0:
+                items.append({"slot": i, "id": stack.id, "count": stack.count,
+                              "damage": stack.damage})
+        return {"type": "dispenser", "x": self.x, "y": self.y, "z": self.z,
+                "items": items}
+
+    @classmethod
+    def from_dict(cls, world, data):
+        te = cls(world, data["x"], data["y"], data["z"])
+        for entry in data.get("items", []):
+            slot = int(entry.get("slot", -1))
+            if 0 <= slot < cls.SIZE:
+                te.contents[slot] = ItemStack(entry["id"],
+                    int(entry.get("count", 1)), int(entry.get("damage", 0)))
+        return te
+
+
 class TileEntityFurnace(TileEntity):
 
     SLOT_INPUT = 0
@@ -156,13 +344,14 @@ class TileEntityFurnace(TileEntity):
         inp = self.furnace_item_stacks[self.SLOT_INPUT]
         if inp is None:
             return False
-        result_id, result_count = self._smelt_result_id(inp.id)
-        if result_id is None:
+        result_key, result_count = self._smelt_result_id(inp.subtype_key)
+        if result_key is None:
             return False
+        result_id, result_damage = Item.parse_subtype_key(result_key)
         out = self.furnace_item_stacks[self.SLOT_OUTPUT]
         if out is None:
             return True
-        if out.id != result_id:
+        if out.id != result_id or int(out.damage) != result_damage:
             return False
         return out.count + result_count <= Item.max_stack_size(result_id)
 
@@ -170,10 +359,13 @@ class TileEntityFurnace(TileEntity):
         if not self.can_smelt():
             return
         inp = self.furnace_item_stacks[self.SLOT_INPUT]
-        result_id, result_count = self._smelt_result_id(inp.id)
+        result_key, result_count = self._smelt_result_id(inp.subtype_key)
+        result_id, result_damage = Item.parse_subtype_key(result_key)
         out = self.furnace_item_stacks[self.SLOT_OUTPUT]
         if out is None:
-            self.furnace_item_stacks[self.SLOT_OUTPUT] = ItemStack(result_id, result_count)
+            self.furnace_item_stacks[self.SLOT_OUTPUT] = ItemStack(
+                result_id, result_count, result_damage,
+            )
         else:
             out.count += result_count
         inp.count -= 1
@@ -341,6 +533,7 @@ class TileEntityMobSpawner(TileEntity):
         from game.entities.pigzombie import ZombiePigman
         from game.entities.giant import Giant
         from game.entities.slime import Slime
+        from game.entities.squid import Squid
 
         entities = {
             legacy_entity_id("creeper"): Creeper,
@@ -354,6 +547,7 @@ class TileEntityMobSpawner(TileEntity):
             legacy_entity_id("zombie_pigman"): ZombiePigman,
             legacy_entity_id("giant"): Giant,
             legacy_entity_id("slime"): Slime,
+            legacy_entity_id("squid"): Squid,
         }
         entity_type = entities.get(self.mob_id)
         if entity_type is None:
@@ -445,6 +639,80 @@ class TileEntityMobSpawner(TileEntity):
         return te
 
 
+class TileEntityNote(TileEntity):
+
+    def __init__(self, world, x, y, z):
+        super().__init__(world, x, y, z)
+        self.note = 0
+        self.previous_redstone_state = False
+
+    def change_pitch(self):
+        self.note = (int(self.note) + 1) % 25
+        return self.note
+
+    def instrument_for_block_below(self) -> int:
+        from game.block.material import material_for_block
+
+        below = self.world.get_block_type(self.x, self.y - 1, self.z)
+        material = material_for_block(below).name
+        return {
+            "rock": 1,       
+            "sand": 2, "gravel": 2,  
+            "glass": 3,      
+            "wood": 4,       
+        }.get(material, 0)
+
+    def trigger_note(self) -> bool:
+        if self.world is None:
+            return False
+        if self.world.get_block_type(self.x, self.y + 1, self.z) is not None:
+            return False
+
+        instrument = self.instrument_for_block_below()
+        sounds = {
+            0: "note.harp",
+            1: "note.bd",
+            2: "note.snare",
+            3: "note.hat",
+            4: "note.bassattack",
+        }
+        pitch = 2.0 ** ((int(self.note) - 12) / 12.0)
+        position = (self.x + 0.5, self.y + 0.5, self.z + 0.5)
+        play_sound = getattr(self.world, "sound_player", None)
+        if callable(play_sound):
+            play_sound(sounds[instrument], volume=3.0, pitch=pitch, position=position)
+        spawn_particle = getattr(self.world, "spawn_particle", None)
+        if callable(spawn_particle):
+            spawn_particle(
+                "note", self.x, self.y + 1.2, self.z,
+                float(self.note) / 24.0, 0.0, 0.0,
+            )
+        return True
+
+    def update_redstone_state(self, powered: bool) -> bool:
+        powered = bool(powered)
+        changed = powered != bool(self.previous_redstone_state)
+        if changed and powered:
+            self.trigger_note()
+        self.previous_redstone_state = powered
+        return changed
+
+    def to_dict(self):
+        return {
+            "type": "note_block", "x": self.x, "y": self.y, "z": self.z,
+            "note": max(0, min(24, int(self.note))),
+        }
+
+    @classmethod
+    def from_dict(cls, world, data):
+        te = cls(world, data["x"], data["y"], data["z"])
+        try:
+            te.note = max(0, min(24, int(data.get("note", 0))))
+        except (TypeError, ValueError, OverflowError):
+            te.note = 0
+        return te
+
+
 def get_chest_inventory(world, x, y, z):
     from game.block.chest_inventory import CombinedChestInventory, find_chest_pair
 
@@ -468,6 +736,10 @@ def get_chest_inventory(world, x, y, z):
 
 
 def create_tile_entity(world, block_type, x, y, z):
+    if block_type == "note_block":
+        return TileEntityNote(world, x, y, z)
+    if block_type == "dispenser":
+        return TileEntityDispenser(world, x, y, z)
     if block_type == "chest":
         return TileEntityChest(world, x, y, z)
     if block_type in ("furnace", "furnace_lit"):

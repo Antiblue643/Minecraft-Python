@@ -132,6 +132,9 @@ def can_place(world, block_type, x, y, z, face=None, player_yaw=0.0):
         if existing.block_type == "snow" and block_type == "snow":
             return False
 
+    if block_type in ("cake", "dispenser"):
+        return _is_solid(world, x, y - 1, z)
+
     if block_type == "chest":
         directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
         neighbors = [
@@ -297,6 +300,9 @@ def placement_meta(world, block_type, x, y, z, face=None, player_yaw=0.0):
         return 2
 
     if block_type in ("furnace", "furnace_lit", "chest"):
+        return facing_from_yaw(player_yaw)
+
+    if block_type == "dispenser":
         return facing_from_yaw(player_yaw)
 
     if block_type in ("pumpkin", "jack_o_lantern"):

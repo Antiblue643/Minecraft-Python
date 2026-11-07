@@ -36,7 +36,9 @@ class CommandContext:
         self.is_host = bool(is_host)
 
 
-def _give_item(ctx: CommandContext, item_id: str, count: int = 1) -> None:
+def _give_item(
+    ctx: CommandContext, item_id: str, count: int = 1, damage: int = 0,
+) -> None:
     from game.entities.item import Item, ItemStack
     from game.content_ids import item_name_from_classic_id
 
@@ -52,7 +54,8 @@ def _give_item(ctx: CommandContext, item_id: str, count: int = 1) -> None:
         return
 
     limit = Item.max_stack_size(item_id)
-    count = max(1, min(limit * 4, int(count)))  
+    count = max(1, min(limit * 4, int(count)))
+    damage = int(damage)
     inv = ctx.player.inventory
     remaining = count
     for i in range(getattr(inv, "MAIN_SIZE", 36)):
@@ -61,16 +64,21 @@ def _give_item(ctx: CommandContext, item_id: str, count: int = 1) -> None:
         stack = inv.get_stack(i)
         if stack is None:
             put = min(remaining, limit)
-            inv.set_stack(i, ItemStack(item_id, put))
+            inv.set_stack(i, ItemStack(item_id, put, damage))
             remaining -= put
-        elif getattr(stack, "id", None) == item_id and stack.count < limit:
+        elif (
+            getattr(stack, "id", None) == item_id
+            and int(getattr(stack, "damage", 0)) == damage
+            and stack.count < limit
+        ):
             space = limit - stack.count
             add = min(space, remaining)
             stack.count += add
             remaining -= add
     given = count - remaining
+    shown_item = f"{item_id}:{damage}" if damage else item_id
     if given > 0:
-        _reply(ctx, "givenItems", given, item_id)
+        _reply(ctx, "givenItems", given, shown_item)
     if remaining > 0:
         _reply(ctx, "inventoryFull", remaining)
 
@@ -84,6 +92,18 @@ def cmd_give(ctx: CommandContext, args: list[str]) -> None:
         _reply(ctx, "giveUsage")
         return
     token = args[0].lower()
+    damage = 0
+    item_token, separator, metadata_token = token.rpartition(":")
+    if separator:
+        if not item_token or not metadata_token.isdigit():
+            _reply(ctx, "invalidMetadata")
+            return
+        damage = int(metadata_token)
+        if damage > 32767:
+            _reply(ctx, "invalidMetadata")
+            return
+        token = item_token
+
     count = 1
     if len(args) >= 2:
         try:
@@ -91,7 +111,7 @@ def cmd_give(ctx: CommandContext, args: list[str]) -> None:
         except ValueError:
             _reply(ctx, "invalidCount")
             return
-    _give_item(ctx, token, count)
+    _give_item(ctx, token, count, damage)
 
 
 def cmd_list(ctx: CommandContext, args: list[str]) -> None:

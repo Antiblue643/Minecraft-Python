@@ -36,7 +36,7 @@ def face_is_hidden(n_cull, block_id, neighbor_id, defs_by_id, is_transparent=Fal
     neighbor_def = definition_for_id(defs_by_id, neighbor_id)
     if not neighbor_def:
         return False
-    if neighbor_def.get("model") in PARTIAL_MODELS:
+    if neighbor_def.get("model") in PARTIAL_MODELS or neighbor_def.get("partial", False):
         return False
 
     if n_cull == "type":

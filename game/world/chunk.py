@@ -39,13 +39,22 @@ _UV_OFFSET = c_void_p(12)
 _COLOR_OFFSET = c_void_p(20)
 
 _K_PLAIN, _K_META, _K_DOOR, _K_CHEST, _K_WIRE, _K_FIRE, _K_FLUID, _K_FENCE = range(8)
+def _leaves_tint(meta, biome_tint=None):
+    value = int(meta) & 15
+    if value & 1:  
+        return (97, 153, 97)  
+    if value & 2:  
+        return (128, 167, 85)  
+    return biome_tint
+
+
 _META_KEYED_MESH_TYPES = frozenset((
     "torch", "redstone_torch", "unlit_redstone_torch", "lever",
     "stone_button", "stone_pressure_plate", "wooden_pressure_plate",
-    "ladder", "furnace", "furnace_lit",
+    "ladder", "furnace", "furnace_lit", "dispenser",
     "rail", "crops", "farmland",
     "sapling", "stairs", "cobblestone_stairs",
-    "pumpkin", "jack_o_lantern",
+    "pumpkin", "jack_o_lantern", "wool", "log", "leaves",
 ))
 _FACE_NEIGHBOR_INDEX = {
     (-1, 0, 0): 0, (1, 0, 0): 1,
@@ -526,11 +535,12 @@ class Chunk:
                 (block_type, int(meta) & 15, bool(door_mirror_right)) if block_type in ("wooden_door", "iron_door")
                 else (block_type, int(meta) & 255) if block_type == "fire"
                 else (block_type, int(meta) & 15, int(wire_flags) & 255) if block_type in ("redstone_wire", "fence")
+                else (block_type, int(meta) & 3, bool(getattr(Block, "_fancy_graphics", True))) if block_type == "leaves"
                 else (block_type, int(meta) & 15) if block_type in (
                     "torch", "redstone_torch", "unlit_redstone_torch", "lever",
-                    "stone_button", "stone_pressure_plate", "wooden_pressure_plate", "ladder", "furnace",
+                    "stone_button", "stone_pressure_plate", "wooden_pressure_plate", "ladder", "furnace", "dispenser",
                     "furnace_lit", "chest", "rail", "crops", "farmland", "sapling",
-                    "stairs", "cobblestone_stairs", "pumpkin", "jack_o_lantern",
+                    "stairs", "cobblestone_stairs", "pumpkin", "jack_o_lantern", "wool", "cake", "log",
                 )
                 else (block_type, bool(getattr(Block, "_fancy_graphics", True))) if block_type == "leaves"
                 else (block_type, "snowy") if block_type == "grass_block" and int(meta) == 1
@@ -546,6 +556,18 @@ class Chunk:
             int(meta) & 255 if block_type == "fire"
             else int(meta) & 15
         )
+        meta_faces = block.definition.get("metaFaces")
+        if block_type == "wool":
+            from game.block.wool import wool_texture_index
+            block.faces = wool_texture_index(meta, block.definition)
+        elif block_type == "leaves":
+            base_tile = 52 if bool(getattr(Block, "_fancy_graphics", True)) else 53
+            block.faces = base_tile + (80 if (int(meta) & 3) == 1 else 0)
+        elif meta_faces and int(meta) & 15:
+            variant_meta = (int(meta) & 3) if block_type == "leaves" else (int(meta) & 15)
+            variant = meta_faces.get(str(variant_meta))
+            if variant is not None:
+                block.faces = variant
         if block_type == "redstone_wire":
             block._mesh_wire_flags = int(wire_flags) & 255
         if block_type == "fence":
@@ -757,7 +779,7 @@ class Chunk:
                 kind = _K_FENCE
             else:
                 kind = _K_PLAIN
-            is_partial = model in PARTIAL_MODELS
+            is_partial = model in PARTIAL_MODELS or bool(definition.get("partial", False))
             if block_id < 256 and is_partial:
                 partial_model_lut[block_id] = 1
             id_info[block_id] = (
@@ -1126,7 +1148,7 @@ class Chunk:
                                 tkey = (block_id, "face_textures", chest_faces)
                             elif kind == _K_DOOR:
                                 tkey = (block_id, template_meta, door_mirror_right)
-                            elif kind == _K_META or kind == _K_FIRE:
+                            elif kind == _K_META or kind == _K_FIRE or btype == "wool":
                                 tkey = (block_id, template_meta)
                             elif kind == _K_WIRE or kind == _K_FENCE:
                                 tkey = (block_id, template_meta, wire_flags)
@@ -1284,13 +1306,14 @@ class Chunk:
                                 face_rgb = _face_color(direction, light_level, hell=hell_lighting)
                                 face_color_cache[color_key] = face_rgb
                             r, g, b = face_rgb
-                            if biome_tints:
-                                tint_pair = biome_tints.get((lx, lz))
+                            if biome_tints or btype == "leaves":
+                                tint_pair = biome_tints.get((lx, lz)) if biome_tints else None
                                 tint = None
                                 if btype == "grass_block" and direction == (0, 1, 0):
                                     tint = tint_pair[0] if tint_pair else None
                                 elif btype == "leaves":
-                                    tint = tint_pair[1] if tint_pair else None
+                                    biome_leaf_tint = tint_pair[1] if tint_pair else None
+                                    tint = _leaves_tint(meta, biome_leaf_tint)
                                 if tint is not None:
                                     r *= tint[0] / 255.0
                                     g *= tint[1] / 255.0
@@ -1320,13 +1343,14 @@ class Chunk:
                                 if plane is not None:
                                     base_shade = _face_shade(direction)
                                     base_rgb = (base_shade, base_shade, base_shade)
-                                    if biome_tints:
-                                        tint_pair = biome_tints.get((lx, lz))
+                                    if biome_tints or btype == "leaves":
+                                        tint_pair = biome_tints.get((lx, lz)) if biome_tints else None
                                         tint = None
                                         if btype == "grass_block" and direction == (0, 1, 0):
                                             tint = tint_pair[0] if tint_pair else None
                                         elif btype == "leaves":
-                                            tint = tint_pair[1] if tint_pair else None
+                                            biome_leaf_tint = tint_pair[1] if tint_pair else None
+                                            tint = _leaves_tint(meta, biome_leaf_tint)
                                         if tint is not None:
                                             base_rgb = (
                                                 base_rgb[0] * tint[0] / 255.0,

@@ -85,6 +85,13 @@ class Skeleton(Monster):
             self.yaw = port_yaw_towards(dx, dz)
         self.has_attacked = True
 
+    def _on_death(self, attacker=None) -> None:
+        if self._drops_spawned:
+            return
+        super()._on_death(attacker)
+        for _ in range(self._rand_int(3)):
+            self.drop_item("bone", 1)
+
     def _living_ai_tick(self) -> None:
         if self.health > 0 and not self.dead:
             self._tick_sunburn()

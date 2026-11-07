@@ -68,13 +68,23 @@ class Inventory:
     def active_idx(self):
         return self.current_item
 
+    def _notify_hotbar_selection(self):
+        callback = getattr(self, "_hotbar_selection_callback", None)
+        if callable(callback):
+            try:
+                callback(int(self.current_item))
+            except Exception:
+                pass
+
     def scroll(self, direction):
         step = 1 if direction > 0 else (-1 if direction < 0 else 0)
-        self.current_item = (self.current_item + step) % self.HOTBAR_SIZE
+        if step:
+            self.select_hotbar((self.current_item + step) % self.HOTBAR_SIZE)
 
     def select_hotbar(self, slot):
-        if 0 <= slot < self.HOTBAR_SIZE:
-            self.current_item = slot
+        if 0 <= slot < self.HOTBAR_SIZE and int(slot) != self.current_item:
+            self.current_item = int(slot)
+            self._notify_hotbar_selection()
 
     def hotbar_items(self):
         return self.main[:self.HOTBAR_SIZE]
@@ -115,9 +125,10 @@ class Inventory:
         if stack is not None and stack.count <= 0:
             self.set_stack(slot, None)
 
-    def _find_stack_with_room(self, item_id):
+    def _find_stack_with_room(self, item_id, damage=0):
         for i, stack in enumerate(self.main):
             if (stack is not None and stack.id == item_id
+                    and int(stack.damage) == int(damage)
                     and stack.count < stack.max_stack_size
                     and stack.count < self.STACK_LIMIT):
                 return i
@@ -129,14 +140,14 @@ class Inventory:
                 return i
         return -1
 
-    def _store_partial(self, item_id, count):
-        slot = self._find_stack_with_room(item_id)
+    def _store_partial(self, item_id, count, damage=0):
+        slot = self._find_stack_with_room(item_id, damage)
         if slot < 0:
             slot = self._first_empty()
         if slot < 0:
             return count
         if self.main[slot] is None:
-            self.main[slot] = ItemStack(item_id, 0)
+            self.main[slot] = ItemStack(item_id, 0, damage)
         target = self.main[slot]
         room = min(target.max_stack_size - target.count, self.STACK_LIMIT - target.count)
         moved = min(count, room)
@@ -147,9 +158,9 @@ class Inventory:
         return count - moved
 
     def add_stack(self, stack):
-        if stack.damage == 0:
+        if stack.damage == 0 or Item.has_subtypes(stack.id):
             while stack.count > 0:
-                left = self._store_partial(stack.id, stack.count)
+                left = self._store_partial(stack.id, stack.count, stack.damage)
                 if left == stack.count:
                     break  
                 stack.count = left

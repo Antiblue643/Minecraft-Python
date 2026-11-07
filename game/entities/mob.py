@@ -348,14 +348,14 @@ class Mob(Entity):
             pass
         self._living_sound_time += 1
 
-    def drop_item(self, item_id, count=1, y_offset=0.0):
+    def drop_item(self, item_id, count=1, y_offset=0.0, damage=0):
         world = Entity.world
         if world is None or not hasattr(world, "spawn_entity"):
             return None
         try:
             from game.entities.item import ItemEntity, ItemStack
             entity = ItemEntity(
-                ItemStack(item_id, count),
+                ItemStack(item_id, count, damage),
                 (float(self.pos[0]), float(self.pos[1]) + y_offset, float(self.pos[2])),
                 pickup_delay=10,
             )
@@ -574,6 +574,9 @@ class Mob(Entity):
         }
         return block_type in solidish
 
+    def can_breathe_underwater(self) -> bool:
+        return False
+
     def _tick_living_hazards(self, dt: float) -> None:
         if self.health <= 0 or self.dead:
             return
@@ -583,7 +586,7 @@ class Mob(Entity):
             self._survival_tick_accum -= 0.05
             ticks += 1
 
-            if self.submerged:
+            if self.submerged and not self.can_breathe_underwater():
                 self.air -= 1
                 if self.air <= -20:
                     self.air = 0
@@ -813,26 +816,27 @@ class Mob(Entity):
                 self.prev_yaw -= 360.0
             while self.yaw - self.prev_yaw >= 180.0:
                 self.prev_yaw += 360.0
-            pending = getattr(self, "_pending_path_yaw", None)
-            if pending is not None:
-                turn = self._wrap_degrees(float(pending) - self.yaw)
-                if turn > 30.0:
-                    turn = 30.0
-                elif turn < -30.0:
-                    turn = -30.0
-                self.yaw += turn
-                self._pending_path_yaw = None
-                self.rotation_pitch = self._update_rotation(
-                    self.rotation_pitch, self.default_pitch, float(self.FACE_PITCH_SPEED),
-                )
-            elif self._look_target is not None:
-                self._apply_look_rotation(1.0)
-            else:
-                self.yaw += self.random_yaw_velocity
-                self.random_yaw_velocity *= 0.9
-                self.rotation_pitch = self._update_rotation(
-                    self.rotation_pitch, self.default_pitch, float(self.FACE_PITCH_SPEED),
-                )
+            if not bool(getattr(self, "MANAGES_AI_ORIENTATION", False)):
+                pending = getattr(self, "_pending_path_yaw", None)
+                if pending is not None:
+                    turn = self._wrap_degrees(float(pending) - self.yaw)
+                    if turn > 30.0:
+                        turn = 30.0
+                    elif turn < -30.0:
+                        turn = -30.0
+                    self.yaw += turn
+                    self._pending_path_yaw = None
+                    self.rotation_pitch = self._update_rotation(
+                        self.rotation_pitch, self.default_pitch, float(self.FACE_PITCH_SPEED),
+                    )
+                elif self._look_target is not None:
+                    self._apply_look_rotation(1.0)
+                else:
+                    self.yaw += self.random_yaw_velocity
+                    self.random_yaw_velocity *= 0.9
+                    self.rotation_pitch = self._update_rotation(
+                        self.rotation_pitch, self.default_pitch, float(self.FACE_PITCH_SPEED),
+                    )
 
         self._update_heading_acceleration(dt * TICKS_PER_SECOND)
         was_on_ground = bool(self.on_ground)

@@ -56,9 +56,13 @@ def on_block_removed(world, block_type: str, x: int, y: int, z: int) -> int:
                 lx, ly, lz = int(x) + dx, int(y) + dy, int(z) + dz
                 if world.get_block_type(lx, ly, lz) != _LEAF:
                     continue
-                if int(world.get_metadata(lx, ly, lz)) == 7:
+                leaf_meta = int(world.get_metadata(lx, ly, lz)) & 15
+                if leaf_meta & 4:
                     continue
-                world.set_block(lx, ly, lz, _LEAF, meta=7, immediate_mesh=False)
+                world.set_block(
+                    lx, ly, lz, _LEAF, meta=leaf_meta | 4,
+                    immediate_mesh=False,
+                )
                 marked += 1
     return marked
 
@@ -102,13 +106,13 @@ def tick_leaves(world, x: int, y: int, z: int, rng) -> None:
     if world.get_block_type(x, y, z) != _LEAF:
         return
     meta = int(world.get_metadata(x, y, z))
-    if meta != 7:
+    if not (meta & 4):
         return
     if not _region_chunks_loaded(world, x, y, z, 5):
         return
 
     if _has_log_path(world, x, y, z, radius=4):
-        world.set_block(x, y, z, _LEAF, meta=0, immediate_mesh=False)
+        world.set_block(x, y, z, _LEAF, meta=meta & ~4, immediate_mesh=False)
         return
 
     dropper = getattr(world, "drop_block_as_item", None)

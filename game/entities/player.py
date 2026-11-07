@@ -125,6 +125,7 @@ class Player(Entity):
         self.workbench_opener = None
         self.chest_opener = None
         self.furnace_opener = None
+        self.dispenser_opener = None
         self.minecart_chest_opener = None
         self.sign_opener = None
         self._distance_walked = 0.0
@@ -994,6 +995,19 @@ class Player(Entity):
                 self.inventory.clear_if_empty(self.inventory.current_item)
         return True
 
+    def _eat_cake_at(self, x, y, z):
+        if self.health <= 0 or self.health >= 20:
+            return False
+        if bool(getattr(self.world, "_multiplayer_client_world", False)):
+            callback = getattr(self.world, "_network_item_use_callback", None)
+            if not callable(callback) or not callback("cake_eat", int(x), int(y), int(z)):
+                return False
+            self.prev_health = self.health
+            self.health = min(20, self.health + 3)
+            return True
+        from game.block.cake import eat_cake_slice
+        return eat_cake_slice(self.world, self, x, y, z)
+
     @_network_edit_action
     def start_digging(self):
         self._digging = True
@@ -1011,6 +1025,22 @@ class Player(Entity):
             self._attack_entity_with_current_item(entity)
             return
         hit, _ = self._raycast(include_intangible=True)
+        if hit and self.world.get_block_type(*hit) == "note_block":
+            network_note = getattr(self.world, "_network_note_block_callback", None)
+            if (bool(getattr(self.world, "_multiplayer_client_world", False))
+                    and callable(network_note)):
+                network_note("play", *hit)
+            else:
+                tile_entity = self.world.get_tile_entity(*hit)
+                if tile_entity is not None:
+                    tile_entity.trigger_note()
+
+        if (hit and self.world.get_block_type(*hit) == "cake"
+                and self.gamemode != 1):
+            if self._eat_cake_at(*hit):
+                self._digging = False
+                self._dig_target = None
+                return
         if not hit and self.gamemode != 1:
             self._left_click_counter = 10
 
@@ -1486,6 +1516,23 @@ class Player(Entity):
         Entity.world.spawn_entity(arrow)
         return True
 
+    def _use_milk_bucket(self):
+        inventory = getattr(self, "inventory", None)
+        if inventory is None:
+            return False
+        held = inventory.get_active_item()
+        if held is None or getattr(held, "id", None) != "milk_bucket":
+            return False
+
+        world = getattr(self, "world", None)
+        network_bucket = getattr(world, "_network_bucket_callback", None)
+        if (bool(getattr(world, "_multiplayer_client_world", False))
+                and callable(network_bucket)):
+            return bool(network_bucket("drink", 0, 0, 0))
+
+        inventory.set_stack(inventory.active_idx, ItemStack("bucket"))
+        return True
+
     def _use_bucket(self, selected):
         operation_started = time.perf_counter()
         item_def = Item.item_defs.get(selected.id, {})
@@ -1674,6 +1721,9 @@ class Player(Entity):
         operation_started = time.perf_counter()
         selected = self.inventory.get_active_item()
 
+        if selected is not None and selected.id == "milk_bucket":
+            return self._use_milk_bucket()
+
         from game.entities.minecart import MinecartEntity
         from game.entities.boat import BoatEntity
 
@@ -1717,15 +1767,24 @@ class Player(Entity):
                 self.inventory.remove_item(self.inventory.active_idx)
             return True
 
-        if selected is not None and selected.id == "milk_bucket":
-            if self.gamemode != 1:
-                self.inventory.set_stack(self.inventory.active_idx, ItemStack("bucket"))
-            return True
-
-        if selected is not None and Item.item_defs.get(selected.id, {}).get("type") == "bucket":
-            return self._use_bucket(selected)
-
         hit, normal = self._raycast(include_intangible=True)
+        if hit and self.world.get_block_type(*hit) == "cake":
+            self.stop_digging()
+            return self._finish_interactable_action(selected) if self._eat_cake_at(*hit) else False
+        if hit and self.world.get_block_type(*hit) == "note_block":
+            self.stop_digging()
+            network_note = getattr(self.world, "_network_note_block_callback", None)
+            if (bool(getattr(self.world, "_multiplayer_client_world", False))
+                    and callable(network_note)):
+                if not network_note("pitch", *hit):
+                    return False
+            else:
+                tile_entity = self.world.get_tile_entity(*hit)
+                if tile_entity is None:
+                    return False
+                tile_entity.change_pitch()
+                tile_entity.trigger_note()
+            return self._finish_interactable_action(selected)
         if hit and self.world.get_block_type(*hit) == "jukebox":
             hx, hy, hz = (int(value) for value in hit)
             jukebox_meta = int(self.world.get_metadata(hx, hy, hz)) & 15
@@ -1764,6 +1823,7 @@ class Player(Entity):
                 if self.gamemode != 1:
                     self.inventory.remove_item(self.inventory.active_idx)
                 return self._finish_interactable_action(selected)
+            return False
 
         if hit and self.world.get_block_type(*hit) == "wooden_door":
             self._toggle_door_at(*hit)
@@ -1781,22 +1841,53 @@ class Player(Entity):
             activate_redstone_ore(self.world, *hit)
             return self._finish_interactable_action(selected)
 
-        if (hit and self.workbench_opener is not None
-                and self.world.get_block_type(*hit) == "crafting_table"):
-            self.stop_digging()
-            self.workbench_opener()
-            return self._finish_interactable_action(selected)
+        if hit and self.world.get_block_type(*hit) == "crafting_table":
+            if self.workbench_opener is not None:
+                self.stop_digging()
+                self.workbench_opener()
+                return self._finish_interactable_action(selected)
+            return False
 
         if hit:
             hit_type = self.world.get_block_type(*hit)
-            if hit_type == "chest" and self.chest_opener is not None:
-                self.stop_digging()
-                self.chest_opener(*hit)
-                return self._finish_interactable_action(selected)
-            if hit_type in ("furnace", "furnace_lit") and self.furnace_opener is not None:
-                self.stop_digging()
-                self.furnace_opener(*hit)
-                return self._finish_interactable_action(selected)
+            if hit_type == "chest":
+                if self.chest_opener is not None:
+                    self.stop_digging()
+                    self.chest_opener(*hit)
+                    return self._finish_interactable_action(selected)
+                return False
+            if hit_type in ("furnace", "furnace_lit"):
+                if self.furnace_opener is not None:
+                    self.stop_digging()
+                    self.furnace_opener(*hit)
+                    return self._finish_interactable_action(selected)
+                return False
+            if hit_type == "dispenser":
+                if self.dispenser_opener is not None:
+                    self.stop_digging()
+                    self.dispenser_opener(*hit)
+                    return self._finish_interactable_action(selected)
+                return False
+
+        if (selected is not None and selected.id == "dye"
+                and (int(getattr(selected, "damage", 0)) & 15) == 15
+                and hit is not None):
+            target_type = self.world.get_block_type(*hit)
+            if target_type in ("crops", "sapling"):
+                if bool(getattr(self.world, "_multiplayer_client_world", False)):
+                    use_item = getattr(self.world, "_network_item_use_callback", None)
+                    if callable(use_item) and use_item("bonemeal", *hit):
+                        return self._finish_interactable_action(selected)
+                    return False
+                from game.block.bonemeal import apply_bonemeal
+                if apply_bonemeal(self.world, *hit):
+                    if self.gamemode != 1:
+                        self.inventory.remove_item(self.inventory.active_idx)
+                    return self._finish_interactable_action(selected)
+                return False
+
+        if selected is not None and Item.item_defs.get(selected.id, {}).get("type") == "bucket":
+            return self._use_bucket(selected)
 
         if selected is not None and selected.id == "snowball":
             return self._use_snowball(selected)
@@ -1893,6 +1984,10 @@ class Player(Entity):
             return False
 
         meta = placement_meta(self.world, place_id, nx, ny, nz, face=normal, player_yaw=self.yaw)
+        if place_id == "wool":
+            meta = int(getattr(selected, "damage", 0)) & 15
+        elif Item.has_subtypes(place_id):
+            meta = int(selected.damage) & 15
         if place_id in ("wooden_door", "iron_door"):
             meta = align_door_meta_with_neighbor(
                 self.world, nx, ny, nz, meta, door_type=place_id,

@@ -903,7 +903,8 @@ class AlphaTerrainGenerator:
         saved = world._worldgen_block_overrides.get((cx, cz), {})
         pos = (x, y, z)
         if pos in saved:
-            return saved[pos]
+            value = saved[pos]
+            return value[0] if isinstance(value, tuple) else value
         key = (cx, cz)
         cached = self._population_terrain_cache.get(key)
         if cached is None:
@@ -948,7 +949,8 @@ class AlphaTerrainGenerator:
         if y < 0 or y >= 128:
             return
         cx, cz = math.floor(x / 16), math.floor(z / 16)
-        world._worldgen_block_overrides.setdefault((cx, cz), {})[(x, y, z)] = block_type
+        value = (block_type, int(meta) & 15) if (int(meta) & 15) else block_type
+        world._worldgen_block_overrides.setdefault((cx, cz), {})[(x, y, z)] = value
         chunk = world.chunks.get((cx, cz))
         if chunk is None:
             return
@@ -1411,7 +1413,16 @@ class AlphaTerrainGenerator:
         ("gold_ore", 8, 2, 32),
         ("redstone_ore", 7, 8, 16),
         ("diamond_ore", 7, 1, 16),
+        ("lapis_ore", 6, 1, -16),
     )
+
+    @staticmethod
+    def _sample_ore_vein_height(rng: JavaRandom, height: int) -> int:
+        height = int(height)
+        if height < 0:
+            bound = -height
+            return rng.next_int(bound) + rng.next_int(bound)
+        return rng.next_int(height)
 
     def _populate_ore_veins_fast(self, world, cx: int, cz: int) -> bool:
         if not self.use_numba or not getattr(self, "numba_ores", True):
@@ -1495,7 +1506,7 @@ class AlphaTerrainGenerator:
                 for block_type, vein_size, attempts, height in self._ORE_VEINS:
                     for _ in range(attempts):
                         x = start_x + rng.next_int(16)
-                        y = rng.next_int(height)
+                        y = self._sample_ore_vein_height(rng, height)
                         z = start_z + rng.next_int(16)
                         self._populate_minable(world, rng, block_type, vein_size, x, y, z)
 
@@ -1514,32 +1525,60 @@ class AlphaTerrainGenerator:
             elif biome.key in ("desert", "tundra", "plains"):
                 tree_count -= 20
 
-            use_big_tree = rng.next_int(10) == 0
-            if biome.key == "rainforest" and rng.next_int(3) == 0:
-                use_big_tree = True
-
             from game.world.treegen import (
-                create_alpha_big_tree_generator, generate_alpha_tree,
+                generate_alpha_big_tree, generate_alpha_tree,
+                generate_birch_tree, generate_spruce_taiga_tree,
             )
             tree_world = _PopulationWorldView(self, world)
-            big_tree_generator = (
-                create_alpha_big_tree_generator(
-                    tree_world, rng, world._is_opaque_tree_block, 128,
-                ) if use_big_tree else None
-            )
-            if big_tree_generator is not None:
-                big_tree_generator.set_scale(1.0, 1.0, 1.0)
             for _ in range(max(0, tree_count)):
                 x = start_x + rng.next_int(16) + 8
                 z = start_z + rng.next_int(16) + 8
                 surface_y = self._population_heightmap_value(world, x, z)
-                if use_big_tree:
-                    big_tree_generator.generate(x, surface_y, z)
-                else:
-                    generate_alpha_tree(
+                if biome.key == "taiga":
+                    generate_spruce_taiga_tree(
                         tree_world, x, surface_y, z, rng,
                         world._is_opaque_tree_block, 128,
+                        variant=1 if rng.next_int(3) == 0 else 2,
                     )
+                elif biome.key == "forest":
+                    if rng.next_int(5) == 0:
+                        generate_birch_tree(
+                            tree_world, x, surface_y, z, rng,
+                            world._is_opaque_tree_block, 128,
+                        )
+                    elif rng.next_int(3) == 0:
+                        from game.world.treegen import generate_alpha_big_tree
+                        generate_alpha_big_tree(
+                            tree_world, x, surface_y, z, rng,
+                            world._is_opaque_tree_block, 128,
+                        )
+                    else:
+                        generate_alpha_tree(
+                            tree_world, x, surface_y, z, rng,
+                            world._is_opaque_tree_block, 128,
+                        )
+                elif biome.key == "rainforest":
+                    if rng.next_int(3) == 0:
+                        generate_alpha_big_tree(
+                            tree_world, x, surface_y, z, rng,
+                            world._is_opaque_tree_block, 128,
+                        )
+                    else:
+                        generate_alpha_tree(
+                            tree_world, x, surface_y, z, rng,
+                            world._is_opaque_tree_block, 128,
+                        )
+                else:
+                    if rng.next_int(10) == 0:
+                        generate_alpha_big_tree(
+                            tree_world, x, surface_y, z, rng,
+                            world._is_opaque_tree_block, 128,
+                        )
+                    else:
+                        generate_alpha_tree(
+                            tree_world, x, surface_y, z, rng,
+                            world._is_opaque_tree_block, 128,
+                        )
 
             for _ in range(2):
                 x = start_x + rng.next_int(16) + 8
@@ -1663,7 +1702,7 @@ class _PopulationWorldView:
         return self.generator._population_get(self.world, x, y, z)
 
     def set_block(self, x, y, z, block_type, meta=0, immediate_mesh=False):
-        self.generator._population_set(self.world, x, y, z, block_type)
+        self.generator._population_set(self.world, x, y, z, block_type, meta=int(meta) & 15)
 
     def generate_chunk(self, cx: int, cz: int,
                        block_type_to_id: dict[str, int] | None = None) -> dict[tuple[int, int, int], str]:

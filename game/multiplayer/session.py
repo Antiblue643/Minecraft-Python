@@ -43,6 +43,7 @@ _MP_ENTITY_KIND_BY_CLASS = {
     ("game.entities.fishing_bobber", "FishingBobberEntity"): "fishing_bobber",
     ("game.entities.pigzombie", "ZombiePigman"): "zombie_pigman",
     ("game.entities.ghast", "Ghast"): "ghast",
+    ("game.entities.squid", "Squid"): "squid",
 }
 
 
@@ -179,6 +180,7 @@ class MultiplayerSession:
         self._tile_entity_sync_accum = 0.0
         self._status = ""
         self._attached_world = None
+        self._attached_inventory = None
         self._host_chunk_requests = deque()
         self._host_chunk_request_keys = set()
         self._client_chunk_pending = set()
@@ -370,13 +372,66 @@ class MultiplayerSession:
         if world is not None:
             world._mp_remote_players = tuple(self.remote_players.values())
 
+    def _attach_local_inventory(self) -> None:
+        player = getattr(self.game, "player", None)
+        inventory = getattr(player, "inventory", None)
+        if self._attached_inventory is inventory:
+            return
+        previous = self._attached_inventory
+        if previous is not None:
+            callback = getattr(previous, "_hotbar_selection_callback", None)
+            if getattr(callback, "__self__", None) is self:
+                previous._hotbar_selection_callback = None
+        self._attached_inventory = inventory
+        if inventory is not None:
+            inventory._hotbar_selection_callback = self._on_local_hotbar_selection
+
+    def _on_local_hotbar_selection(self, slot: int) -> None:
+        try:
+            selected = int(slot)
+        except (TypeError, ValueError, OverflowError):
+            return
+        if not 0 <= selected < 9:
+            return
+        if self.mode == "client" and self.client is not None:
+            self.client.send_hotbar_selection(selected)
+        elif self.mode == "host" and self.server is not None:
+            player = getattr(self.game, "player", None)
+            if player is not None:
+                self.server.set_host_inventory(self._inventory_snapshot(player))
+
+    def _approve_remote_hotbar_selection(self, event: dict) -> None:
+        if self.mode != "host" or self.server is None:
+            return
+        try:
+            player_id = int(event.get("id"))
+            slot = int(event.get("slot"))
+        except (TypeError, ValueError, OverflowError):
+            return
+        if not 0 <= slot < 9:
+            return
+        remote = self.remote_players.get(player_id)
+        if remote is None or not self._is_remote_player_connected(player_id):
+            return
+        inventory = getattr(remote, "inventory", None)
+        if inventory is None:
+            return
+        inventory.current_item = slot
+        state = self._inventory_snapshot(remote)
+        self.server.set_client_inventory_state(player_id, state)
+        if self.server_config is not None:
+            self.server_config.update_inventory(remote.username, state)
+
     def attach_world(self, world) -> None:
+        self._attach_local_inventory()
         previous = self._attached_world
         if previous is not None and previous is not world:
             previous._network_block_callback = None
             previous._network_world_event_callback = None
             previous._network_bucket_callback = None
+            previous._network_item_use_callback = None
             previous._network_jukebox_callback = None
+            previous._network_note_block_callback = None
             previous._mp_suppress_world_events = False
             previous._network_animation_callback = None
             previous._network_entity_spawn_callback = None
@@ -401,8 +456,14 @@ class MultiplayerSession:
             world._network_bucket_callback = (
                 self._on_local_bucket_use if self.mode == "client" else None
             )
+            world._network_item_use_callback = (
+                self._on_local_item_use if self.mode == "client" else None
+            )
             world._network_jukebox_callback = (
                 self._on_local_jukebox_use if self.mode == "client" else None
+            )
+            world._network_note_block_callback = (
+                self._on_local_note_block_use if self.mode == "client" else None
             )
             world._mp_suppress_world_events = False
             world._network_animation_callback = self._on_local_animation
@@ -522,10 +583,22 @@ class MultiplayerSession:
         self.client.send_bucket_use(action, x, y, z)
         return True
 
+    def _on_local_item_use(self, action: str, x: int, y: int, z: int) -> bool:
+        if self.mode != "client" or self.client is None:
+            return False
+        self.client.send_item_use(action, x, y, z)
+        return True
+
     def _on_local_jukebox_use(self, action: str, x: int, y: int, z: int) -> bool:
         if self.mode != "client" or self.client is None:
             return False
         self.client.send_jukebox_use(action, x, y, z)
+        return True
+
+    def _on_local_note_block_use(self, action: str, x: int, y: int, z: int) -> bool:
+        if self.mode != "client" or self.client is None:
+            return False
+        self.client.send_note_block_use(action, x, y, z)
         return True
 
     @staticmethod
@@ -750,7 +823,9 @@ class MultiplayerSession:
                         target = "chest"
                     elif "furnace" in class_name:
                         target = "furnace"
-                    if target in {"chest", "furnace"}:
+                    elif "dispenser" in class_name:
+                        target = "dispenser"
+                    if target in {"chest", "furnace", "dispenser"}:
                         position = (tile_entity.x, tile_entity.y, tile_entity.z)
         if target == "minecart" and entity_id <= 0:
             return True
@@ -801,6 +876,7 @@ class MultiplayerSession:
             self.server.set_client_inventory_state(player_id, current)
             return
         candidate["cursor"] = current.get("cursor")
+        candidate["selected"] = current.get("selected", 0)
         if not bool(event.get("initial", False)):
             before = self._inventory_item_totals(current)
             after = self._inventory_item_totals(candidate)
@@ -1021,7 +1097,7 @@ class MultiplayerSession:
         if target == "player":
             if not 0 <= index < 40:
                 return
-        elif target in {"chest", "furnace"}:
+        elif target in {"chest", "furnace", "dispenser"}:
             try:
                 x, y, z = int(event.get("x")), int(event.get("y")), int(event.get("z"))
             except (TypeError, ValueError, OverflowError):
@@ -1032,13 +1108,15 @@ class MultiplayerSession:
             if dx * dx + dy * dy + dz * dz > 6.0 * 6.0:
                 return
             tile_entity = getattr(world, "tile_entities", {}).get((x, y, z))
-            expected = "TileEntityChest" if target == "chest" else "TileEntityFurnace"
+            expected = {"chest": "TileEntityChest", "furnace": "TileEntityFurnace",
+                        "dispenser": "TileEntityDispenser"}[target]
             block_type = world.get_block_type(x, y, z)
-            valid_blocks = ({"chest"} if target == "chest" else {"furnace", "furnace_lit"})
+            valid_blocks = ({"chest"} if target == "chest" else
+                            {"furnace", "furnace_lit"} if target == "furnace" else {"dispenser"})
             if (tile_entity is None or type(tile_entity).__name__ != expected
                     or block_type not in valid_blocks):
                 return
-            if not 0 <= index < (27 if target == "chest" else 3):
+            if not 0 <= index < ({"chest": 27, "furnace": 3, "dispenser": 9}[target]):
                 return
             target_inventory = tile_entity
         elif target == "minecart":
@@ -1105,15 +1183,6 @@ class MultiplayerSession:
             return
         local_selected = getattr(inventory, "current_item", 0)
         normalized = P.normalize_inventory_state(state)
-        if keep_local_selection:
-            if normalized["selected"] == local_selected:
-                self._selection_override_streak = 0
-            else:
-                streak = getattr(self, "_selection_override_streak", 0) + 1
-                self._selection_override_streak = streak
-                if streak > 8:
-                    keep_local_selection = False
-                    self._selection_override_streak = 0
         from game.entities.item import ItemStack
         for field, target in (("main", inventory.main), ("armor", inventory.armor)):
             for index, data in enumerate(normalized[field]):
@@ -1299,6 +1368,17 @@ class MultiplayerSession:
             "dest_pos": getattr(entity, "dest_pos", 0.0),
             "prev_dest_pos": getattr(entity, "prev_dest_pos", getattr(entity, "dest_pos", 0.0)),
         }
+        if kind == "sheep":
+            common["fleece_color"] = int(getattr(entity, "fleece_color", 0)) & 15
+        if kind == "squid":
+            common.update({
+                "swim_phase": getattr(entity, "swim_phase", 0.0),
+                "prev_swim_phase": getattr(entity, "prev_swim_phase", 0.0),
+                "body_yaw_animation": getattr(entity, "body_yaw_animation", 0.0),
+                "prev_body_yaw_animation": getattr(entity, "prev_body_yaw_animation", 0.0),
+                "tentacle_angle": getattr(entity, "tentacle_angle", 0.0),
+                "prev_tentacle_angle": getattr(entity, "prev_tentacle_angle", 0.0),
+            })
         if kind == "tnt":
             common["fuse"] = float(getattr(entity, "fuse", 80.0))
         if kind == "item":
@@ -1526,12 +1606,13 @@ class MultiplayerSession:
         from game.entities.slime import Slime
         from game.entities.giant import Giant
         from game.entities.ghast import Ghast
+        from game.entities.squid import Squid
         return {
             "zombie_pigman": ZombiePigman,
             "pig": Pig, "cow": Cow, "sheep": Sheep, "chicken": Chicken,
             "zombie": Zombie, "skeleton": Skeleton, "creeper": Creeper,
             "spider": Spider, "slime": Slime, "giant": Giant,
-            "mob": Mob, "monster": Monster, "ghast": Ghast,
+            "mob": Mob, "monster": Monster, "ghast": Ghast, "squid": Squid,
         }.get(kind)
 
     def _create_remote_entity(self, state):
@@ -1660,6 +1741,8 @@ class MultiplayerSession:
                 setter = getattr(entity, "set_slime_size", None)
                 if callable(setter):
                     setter(int(state.get("slime_size", 1)))
+            if state["kind"] == "sheep":
+                entity.set_fleece_color(int(state.get("fleece_color", 0)))
         entity._mp_remote_entity = True
         entity._mp_remote_item = state["kind"] == "item"
         entity._mp_kind = state["kind"]
@@ -1773,6 +1856,15 @@ class MultiplayerSession:
                     entity.prev_health = entity.health
                 entity.saddled = state["saddled"]
                 entity.sheared = state["sheared"]
+                if state["kind"] == "sheep":
+                    entity.set_fleece_color(state.get("fleece_color", 0))
+                elif state["kind"] == "squid":
+                    entity.swim_phase = state["swim_phase"]
+                    entity.prev_swim_phase = state["prev_swim_phase"]
+                    entity.body_yaw_animation = state["body_yaw_animation"]
+                    entity.prev_body_yaw_animation = state["prev_body_yaw_animation"]
+                    entity.tentacle_angle = state["tentacle_angle"]
+                    entity.prev_tentacle_angle = state["prev_tentacle_angle"]
                 entity.creeper_state = state["creeper_state"]
                 entity.time_since_ignited = state["time_since_ignited"]
                 entity.wing_rotation = state["wing_rotation"]
@@ -1990,21 +2082,26 @@ class MultiplayerSession:
         valid_blocks = {
             "chest": {"chest"},
             "furnace": {"furnace", "furnace_lit"},
+            "dispenser": {"dispenser"},
             "sign": {"sign", "wall_sign"},
             "mob_spawner": {"mob_spawner"},
+            "note_block": {"note_block"},
         }
         if block_type not in valid_blocks[te_type]:
             return False
 
         from game.block.tile_entity import (
-            TileEntityChest, TileEntityFurnace, TileEntityMobSpawner, TileEntitySign,
+            TileEntityChest, TileEntityDispenser, TileEntityFurnace,
+            TileEntityMobSpawner, TileEntitySign, TileEntityNote,
         )
         from game.entities.item import ItemStack
         expected_cls = {
             "chest": TileEntityChest,
             "furnace": TileEntityFurnace,
+            "dispenser": TileEntityDispenser,
             "sign": TileEntitySign,
             "mob_spawner": TileEntityMobSpawner,
+            "note_block": TileEntityNote,
         }[te_type]
         key = (x, y, z)
         te = getattr(world, "tile_entities", {}).get(key)
@@ -2029,12 +2126,21 @@ class MultiplayerSession:
             te.furnace_burn_time = normalized["burn"]
             te.furnace_cook_time = normalized["cook"]
             te.current_item_burn_time = normalized["burn_total"]
+        elif te_type == "dispenser":
+            slots = [None] * 9
+            for entry in normalized["items"]:
+                slots[entry["slot"]] = ItemStack(
+                    entry["id"], entry["count"], entry["damage"],
+                )
+            te.contents = slots
         elif te_type == "sign":
             allowed = set(te.ALLOWED_CHARS)
             te.sign_text = [
                 "".join(char for char in line if char in allowed)[:te.MAX_LINE_LENGTH]
                 for line in normalized["text"]
             ]
+        elif te_type == "note_block":
+            te.note = normalized["note"]
         else:
             te.mob_id = normalized["entity_id"]
             te.delay = normalized["delay"]
@@ -2084,6 +2190,7 @@ class MultiplayerSession:
         expected_blocks = {
             "chest": {"chest"},
             "furnace": {"furnace", "furnace_lit"},
+            "dispenser": {"dispenser"},
             "sign": {"sign", "wall_sign"},
         }
         if block_type not in expected_blocks[state["type"]]:
@@ -2118,6 +2225,12 @@ class MultiplayerSession:
                     entry["id"], entry["count"], entry["damage"],
                 )
             existing.furnace_item_stacks = slots
+        elif state["type"] == "sign":
+            allowed = set(existing.ALLOWED_CHARS)
+            existing.sign_text = [
+                "".join(char for char in line if char in allowed)[:15]
+                for line in state["text"]
+            ]
         else:
             allowed = set(existing.ALLOWED_CHARS)
             existing.sign_text = [
@@ -2502,7 +2615,7 @@ class MultiplayerSession:
             else:
                 world._populated_chunks.discard(key)
 
-            tile_entity_types = {"chest", "furnace", "furnace_lit", "sign", "wall_sign", "mob_spawner"}
+            tile_entity_types = {"chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign", "mob_spawner"}
             used_block_names = {
                 chunk._id_to_block_type[block_id] for block_id in set(chunk.blocks)
                 if block_id and block_id < len(chunk._id_to_block_type)
@@ -2564,6 +2677,11 @@ class MultiplayerSession:
             self.log(f"Chunk sync failed: {type(exc).__name__}: {exc}")
 
     def stop(self) -> None:
+        if self._attached_inventory is not None:
+            callback = getattr(self._attached_inventory, "_hotbar_selection_callback", None)
+            if getattr(callback, "__self__", None) is self:
+                self._attached_inventory._hotbar_selection_callback = None
+            self._attached_inventory = None
         if self._attached_world is not None:
             music = getattr(self._attached_world, "record_music_player", None)
             stop_record = getattr(music, "stop_record", None)
@@ -2575,7 +2693,9 @@ class MultiplayerSession:
             self._attached_world._network_block_callback = None
             self._attached_world._network_world_event_callback = None
             self._attached_world._network_bucket_callback = None
+            self._attached_world._network_item_use_callback = None
             self._attached_world._network_jukebox_callback = None
+            self._attached_world._network_note_block_callback = None
             self._attached_world._mp_suppress_world_events = False
             self._attached_world._network_animation_callback = None
             self._attached_world._network_entity_spawn_callback = None
@@ -2672,6 +2792,7 @@ class MultiplayerSession:
         player = game.player
         if player is None:
             return
+        self._attach_local_inventory()
 
         dedicated_server = bool(getattr(game, "_dedicated_server_mode", False))
         try:
@@ -2771,6 +2892,8 @@ class MultiplayerSession:
             self._handle_command_request(ev)
         elif t == "inventory_sync_request":
             self._approve_remote_inventory_sync(ev)
+        elif t == "hotbar_select_request":
+            self._approve_remote_hotbar_selection(ev)
         elif t == "inventory_transaction_request":
             self._approve_remote_inventory_transaction(ev)
         elif t == "inventory_drop_request":
@@ -2860,8 +2983,12 @@ class MultiplayerSession:
             self._apply_remote_entity_sync(ev)
         elif t == "bucket_use_request":
             self._handle_bucket_use_request(ev)
+        elif t == "item_use_request":
+            self._handle_item_use_request(ev)
         elif t == "jukebox_use_request":
             self._handle_jukebox_use_request(ev)
+        elif t == "note_block_use_request":
+            self._handle_note_block_use_request(ev)
         elif t == "boat_control_request":
             self._handle_boat_control_request(ev)
         elif t == "attack_request":
@@ -3020,6 +3147,16 @@ class MultiplayerSession:
         dz = float(z) + 0.5 - float(player.pos[2])
         return dx * dx + dy * dy + dz * dz <= float(reach) ** 2
 
+    def _remote_player_is_creative(self, remote) -> bool:
+        for candidate in (remote, getattr(self.game, "player", None)):
+            mode = getattr(candidate, "gamemode", None)
+            if mode is not None:
+                try:
+                    return int(mode) == 1
+                except (TypeError, ValueError, OverflowError):
+                    return False
+        return False
+
     def _save_remote_inventory(self, player_id: int, remote) -> None:
         state = self._inventory_snapshot(remote)
         if self.server is not None:
@@ -3032,22 +3169,38 @@ class MultiplayerSession:
             return
         try:
             player_id = int(event.get("id"))
-            x, y, z = int(event.get("x")), int(event.get("y")), int(event.get("z"))
         except (TypeError, ValueError, OverflowError):
             return
         remote = self.remote_players.get(player_id)
         world = getattr(self.game, "world", None)
         action = str(event.get("action") or "")
-        if (remote is None or world is None or not self._is_remote_player_connected(player_id)
-                or not self._remote_action_in_reach(remote, x, y, z)):
+        if remote is None or not self._is_remote_player_connected(player_id):
             return
         inventory = remote.inventory
         slot = int(getattr(inventory, "current_item", 0))
         held = inventory.get_active_item()
         held_id = str(getattr(held, "id", "")) if held is not None else ""
         from game.multiplayer.remote_player import RemoteItemStack
+        if action == "drink":
+            if (held_id != "milk_bucket" or int(getattr(held, "count", 0)) <= 0
+                    or float(getattr(remote, "health", 20.0)) <= 0.0):
+                return
+            inventory.set_stack(slot, RemoteItemStack("bucket", 1, 0))
+            self._save_remote_inventory(player_id, remote)
+            return
+
+        try:
+            x, y, z = int(event.get("x")), int(event.get("y")), int(event.get("z"))
+        except (TypeError, ValueError, OverflowError):
+            return
+        if world is None or not self._remote_action_in_reach(remote, x, y, z):
+            return
         from game.multiplayer.bucket_rules import bucket_result_for_source, bucket_target_is_solid
-        if action == "pickup":
+        if action == "milk":
+            if held_id != "milk_bucket" or world.get_block_type(x, y, z) is None:
+                return
+            inventory.set_stack(slot, RemoteItemStack("bucket", 1, 0))
+        elif action == "pickup":
             if held_id != "bucket":
                 return
             block_type = world.get_block_type(x, y, z)
@@ -3067,6 +3220,57 @@ class MultiplayerSession:
         else:
             return
         self._save_remote_inventory(player_id, remote)
+
+    def _handle_item_use_request(self, event: dict) -> None:
+        if self.mode != "host" or self.server is None:
+            return
+        try:
+            player_id = int(event.get("id"))
+            x, y, z = int(event.get("x")), int(event.get("y")), int(event.get("z"))
+        except (TypeError, ValueError, OverflowError):
+            return
+        remote = self.remote_players.get(player_id)
+        world = getattr(self.game, "world", None)
+        action = str(event.get("action") or "")
+        if (action not in {"bonemeal", "cake_eat"} or remote is None or world is None
+                or not self._is_remote_player_connected(player_id)
+                or not self._remote_action_in_reach(remote, x, y, z)):
+            return
+        if action == "cake_eat":
+            if world.get_block_type(x, y, z) != "cake" or int(getattr(remote, "health", 0)) <= 0:
+                return
+            if int(getattr(remote, "health", 0)) >= 20:
+                return
+            from game.block.cake import eat_cake_slice
+            network_depth = int(getattr(world, "_network_edit_depth", 0))
+            world._network_edit_depth = network_depth + 1
+            try:
+                eat_cake_slice(world, remote, x, y, z)
+            finally:
+                world._network_edit_depth = network_depth
+            return
+        held = remote.inventory.get_active_item()
+        if (held is None or str(getattr(held, "id", "")) != "dye"
+                or int(getattr(held, "damage", 0)) != 15
+                or int(getattr(held, "count", 0)) <= 0):
+            return
+        if world.get_block_type(x, y, z) not in ("crops", "sapling"):
+            return
+        from game.block.bonemeal import apply_bonemeal
+        network_depth = int(getattr(world, "_network_edit_depth", 0))
+        world._network_edit_depth = network_depth + 1
+        try:
+            used = apply_bonemeal(world, x, y, z)
+        finally:
+            world._network_edit_depth = network_depth
+        if not used:
+            return
+        if not self._remote_player_is_creative(remote):
+            slot = int(getattr(remote.inventory, "current_item", 0))
+            held.count -= 1
+            if held.count <= 0:
+                remote.inventory.set_stack(slot, None)
+            self._save_remote_inventory(player_id, remote)
 
     def _handle_jukebox_use_request(self, event: dict) -> None:
         if self.mode != "host" or self.server is None:
@@ -3122,6 +3326,29 @@ class MultiplayerSession:
         else:
             return
         self._save_remote_inventory(player_id, remote)
+
+    def _handle_note_block_use_request(self, event: dict) -> None:
+        if self.mode != "host" or self.server is None:
+            return
+        try:
+            player_id = int(event.get("id"))
+            x, y, z = int(event.get("x")), int(event.get("y")), int(event.get("z"))
+        except (TypeError, ValueError, OverflowError):
+            return
+        remote = self.remote_players.get(player_id)
+        world = getattr(self.game, "world", None)
+        action = str(event.get("action") or "")
+        if (remote is None or world is None or action not in {"play", "pitch"}
+                or not self._is_remote_player_connected(player_id)
+                or not self._remote_action_in_reach(remote, x, y, z)
+                or world.get_block_type(x, y, z) != "note_block"):
+            return
+        tile_entity = world.get_tile_entity(x, y, z)
+        if tile_entity is None:
+            return
+        if action == "pitch":
+            tile_entity.change_pitch()
+        tile_entity.trigger_note()
 
     def _handle_boat_control_request(self, event: dict) -> None:
         if self.mode != "host" or self.server is None:
@@ -3246,11 +3473,117 @@ class MultiplayerSession:
             return
         remote = self.remote_players.get(player_id)
         world = getattr(self.game, "world", None)
-        if remote is None or world is None or event.get("action") != "furnace_fuel":
+        action = str(event.get("action") or "")
+        if remote is None or world is None:
+            return
+        target = next((candidate for candidate in getattr(world, "entities", ())
+                       if int(getattr(candidate, "_mp_net_id", 0) or 0) == entity_id), None)
+        if action in {"milk_cow", "milk_squid"}:
+            if action == "milk_cow":
+                from game.entities.cow import Cow
+                target_type = Cow
+            else:
+                from game.entities.squid import Squid
+                target_type = Squid
+            if (float(getattr(remote, "health", 20.0)) <= 0.0
+                    or not isinstance(target, target_type) or target.dead
+                    or float(getattr(target, "health", 0.0)) <= 0.0):
+                return
+            inventory = getattr(remote, "inventory", None)
+            held = inventory.get_active_item() if inventory is not None else None
+            if (held is None or str(getattr(held, "id", "")) != "bucket"
+                    or int(getattr(held, "count", 0)) <= 0):
+                return
+            bounds_getter = getattr(target, "get_interaction_bounds", None)
+            if callable(bounds_getter):
+                try:
+                    min_x, min_y, min_z, max_x, max_y, max_z = bounds_getter()
+                except Exception:
+                    return
+            else:
+                width, height, depth = target.size
+                min_x, min_y, min_z = (
+                    target.pos[0] - width * 0.5, target.pos[1], target.pos[2] - depth * 0.5
+                )
+                max_x, max_y, max_z = (
+                    target.pos[0] + width * 0.5, target.pos[1] + height,
+                    target.pos[2] + depth * 0.5,
+                )
+            eye_x = float(remote.pos[0])
+            eye_y = float(remote.pos[1]) + 1.62
+            eye_z = float(remote.pos[2])
+            near_x = min(max(eye_x, min_x), max_x)
+            near_y = min(max(eye_y, min_y), max_y)
+            near_z = min(max(eye_z, min_z), max_z)
+            dx, dy, dz = eye_x - near_x, eye_y - near_y, eye_z - near_z
+            reach = 4.5 + float(getattr(target, "collision_border_size", 0.1))
+            if dx * dx + dy * dy + dz * dz > reach * reach:
+                return
+            from game.multiplayer.remote_player import RemoteItemStack
+            slot = int(getattr(inventory, "current_item", 0))
+            inventory.set_stack(slot, RemoteItemStack("milk_bucket", 1, 0))
+            self._save_remote_inventory(player_id, remote)
+            return
+        if action == "dye_sheep":
+            from game.entities.sheep import Sheep
+            if (float(getattr(remote, "health", 20.0)) <= 0.0
+                    or not isinstance(target, Sheep) or target.dead
+                    or float(getattr(target, "health", 0.0)) <= 0.0
+                    or target.sheared):
+                return
+            inventory = getattr(remote, "inventory", None)
+            held = inventory.get_active_item() if inventory is not None else None
+            if (held is None or str(getattr(held, "id", "")) != "dye"
+                    or not 0 <= int(getattr(held, "damage", 0)) <= 15
+                    or int(getattr(held, "count", 0)) <= 0):
+                return
+            bounds_getter = getattr(target, "get_interaction_bounds", None)
+            if callable(bounds_getter):
+                try:
+                    min_x, min_y, min_z, max_x, max_y, max_z = bounds_getter()
+                except Exception:
+                    return
+            else:
+                width, height, depth = target.size
+                min_x, min_y, min_z = (
+                    target.pos[0] - width * 0.5, target.pos[1], target.pos[2] - depth * 0.5
+                )
+                max_x, max_y, max_z = (
+                    target.pos[0] + width * 0.5, target.pos[1] + height,
+                    target.pos[2] + depth * 0.5,
+                )
+            eye_x = float(remote.pos[0])
+            eye_y = float(remote.pos[1]) + 1.62
+            eye_z = float(remote.pos[2])
+            near_x = min(max(eye_x, min_x), max_x)
+            near_y = min(max(eye_y, min_y), max_y)
+            near_z = min(max(eye_z, min_z), max_z)
+            dx, dy, dz = eye_x - near_x, eye_y - near_y, eye_z - near_z
+            reach = 4.5 + float(getattr(target, "collision_border_size", 0.1))
+            if dx * dx + dy * dy + dz * dz > reach * reach:
+                return
+            can_see = getattr(target, "can_entity_be_seen", None)
+            if callable(can_see):
+                try:
+                    if not can_see(remote):
+                        return
+                except Exception:
+                    return
+            fleece_color = (~int(getattr(held, "damage", 0))) & 15
+            if fleece_color == target.fleece_color:
+                return
+            target.set_fleece_color(fleece_color)
+            if not self._remote_player_is_creative(remote):
+                slot = int(getattr(inventory, "current_item", 0))
+                held.count -= 1
+                if held.count <= 0:
+                    inventory.set_stack(slot, None)
+                self._save_remote_inventory(player_id, remote)
+            return
+        if action != "furnace_fuel":
             return
         from game.entities.minecart import MinecartEntity
-        cart = next((candidate for candidate in getattr(world, "entities", ())
-                     if int(getattr(candidate, "_mp_net_id", 0) or 0) == entity_id), None)
+        cart = target
         if (not isinstance(cart, MinecartEntity) or cart.dead
                 or cart.cart_type != MinecartEntity.FURNACE):
             return

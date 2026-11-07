@@ -18,10 +18,10 @@ INVENTORY_MAIN_SIZE = 36
 INVENTORY_ARMOR_SIZE = 4
 MAX_ENTITY_COUNT = 256
 MAX_TILE_ENTITY_COUNT = 256
-_TILE_ENTITY_TYPES = frozenset({"chest", "furnace", "sign", "mob_spawner"})
+_TILE_ENTITY_TYPES = frozenset({"chest", "furnace", "dispenser", "sign", "mob_spawner", "note_block"})
 _MOB_ENTITY_KINDS = frozenset({
     "pig", "cow", "sheep", "chicken", "zombie", "skeleton",
-    "creeper", "spider", "slime", "giant", "mob", "monster", "zombie_pigman", "ghast"
+    "creeper", "spider", "slime", "giant", "mob", "monster", "zombie_pigman", "ghast", "squid"
 })
 _ENTITY_KINDS = frozenset({
     "item", "tnt", "arrow", "snowball", "egg", "painting", "boat", "minecart",
@@ -67,7 +67,7 @@ _EVENT_SOUND_NAME = re.compile(r"^[a-z0-9_./-]{1,64}$")
 _EVENT_PARTICLES = frozenset({
     "smoke", "largesmoke", "explode", "flame", "bubble", "splash",
     "rain", "lava", "reddust", "snow", "snowballpoof", "slime",
-    "block_hit", "block_destroy",
+    "block_hit", "block_destroy", "note",
 })
 
 def normalize_world_event(data: Any, *, allow_authoritative: bool = True) -> Optional[dict]:
@@ -178,8 +178,8 @@ def normalize_tile_entity_state(data: Any) -> Optional[dict]:
         return None
 
     result = {"type": te_type, "x": x, "y": y, "z": z}
-    if te_type in {"chest", "furnace"}:
-        slot_count = 27 if te_type == "chest" else 3
+    if te_type in {"chest", "furnace", "dispenser"}:
+        slot_count = {"chest": 27, "furnace": 3, "dispenser": 9}[te_type]
         raw_items = data.get("items") if isinstance(data.get("items"), list) else []
         items = []
         seen_slots = set()
@@ -216,6 +216,11 @@ def normalize_tile_entity_state(data: Any) -> Optional[dict]:
             value = "".join(char for char in value if char >= " " and char not in "\r\n\x7f")
             lines.append(value[:15])
         result["text"] = lines
+    elif te_type == "note_block":
+        try:
+            result["note"] = max(0, min(24, int(data.get("note", 0))))
+        except (TypeError, ValueError, OverflowError):
+            return None
     elif te_type == "mob_spawner":
         entity_id = str(data.get("entity_id") or "")[:32]
         if not re.fullmatch(r"[A-Za-z0-9_./-]{1,32}", entity_id):
@@ -285,7 +290,7 @@ def inventory_transaction_request(
     entity_id: int | None = None,
 ) -> dict:
     target = str(target)
-    if target not in {"player", "chest", "furnace", "minecart", "craft2", "craft3"}:
+    if target not in {"player", "chest", "furnace", "dispenser", "minecart", "craft2", "craft3"}:
         raise ValueError("unsupported inventory transaction target")
     sequence = int(sequence)
     slot = int(slot)
@@ -294,7 +299,7 @@ def inventory_transaction_request(
         raise ValueError("invalid inventory transaction")
     packet = {"t": "inventory_transaction", "seq": sequence,
               "target": target, "slot": slot, "button": button}
-    if target in {"chest", "furnace"}:
+    if target in {"chest", "furnace", "dispenser"}:
         if not isinstance(position, (tuple, list)) or len(position) != 3:
             raise ValueError("container transaction requires a position")
         x, y, z = (int(value) for value in position)
@@ -313,7 +318,7 @@ def inventory_transaction_request(
 def entity_interact_request(entity_id: int, action: str) -> dict:
     entity_id = int(entity_id)
     action = str(action or "")
-    if not 1 <= entity_id <= 2**31 - 1 or action not in {"furnace_fuel"}:
+    if not 1 <= entity_id <= 2**31 - 1 or action not in {"furnace_fuel", "milk_cow", "milk_squid", "dye_sheep"}:
         raise ValueError("invalid entity interaction")
     return {"t": "entity_interact", "entity_id": entity_id, "action": action}
 
@@ -340,13 +345,26 @@ def inventory_drop_request(sequence: int, slot: int, count: int) -> dict:
 
 def bucket_use_request(action: str, x: int, y: int, z: int) -> dict:
     action = str(action or "")
-    if action not in {"pickup", "pour"}:
+    if action == "drink":
+        return {"t": "bucket_use", "action": "drink"}
+    if action not in {"pickup", "pour", "milk"}:
         raise ValueError("invalid bucket action")
     x, y, z = int(x), int(y), int(z)
     if not (-30_000_000 <= x <= 30_000_000 and 0 <= y < 256
             and -30_000_000 <= z <= 30_000_000):
         raise ValueError("invalid bucket target")
     return {"t": "bucket_use", "action": action, "x": x, "y": y, "z": z}
+
+
+def item_use_request(action: str, x: int, y: int, z: int) -> dict:
+    action = str(action or "")
+    if action not in {"bonemeal", "cake_eat"}:
+        raise ValueError("invalid item use action")
+    x, y, z = int(x), int(y), int(z)
+    if not (-30_000_000 <= x <= 30_000_000 and 0 <= y < 256
+            and -30_000_000 <= z <= 30_000_000):
+        raise ValueError("invalid item use target")
+    return {"t": "item_use", "action": action, "x": x, "y": y, "z": z}
 
 
 def jukebox_use_request(action: str, x: int, y: int, z: int) -> dict:
@@ -358,6 +376,17 @@ def jukebox_use_request(action: str, x: int, y: int, z: int) -> dict:
             and -30_000_000 <= z <= 30_000_000):
         raise ValueError("invalid jukebox target")
     return {"t": "jukebox_use", "action": action, "x": x, "y": y, "z": z}
+
+
+def note_block_use_request(action: str, x: int, y: int, z: int) -> dict:
+    action = str(action or "")
+    if action not in {"play", "pitch"}:
+        raise ValueError("invalid note-block action")
+    x, y, z = int(x), int(y), int(z)
+    if not (-30_000_000 <= x <= 30_000_000 and 0 <= y < 256
+            and -30_000_000 <= z <= 30_000_000):
+        raise ValueError("invalid note-block target")
+    return {"t": "note_block_use", "action": action, "x": x, "y": y, "z": z}
 
 
 def boat_control_request(
@@ -803,6 +832,8 @@ def normalize_entity_state(data: Any) -> Optional[dict]:
         result["slime_size"] = integer("slime_size", 1, 1, 4)
         result["saddled"] = bool(data.get("saddled", False))
         result["sheared"] = bool(data.get("sheared", False))
+        if kind == "sheep":
+            result["fleece_color"] = integer("fleece_color", 0, 0, 15)
         result["creeper_state"] = integer("creeper_state", -1, -1, 2)
         result["time_since_ignited"] = integer("time_since_ignited", 0, 0, 100)
         result["wing_rotation"] = number("wing_rotation", 0.0, -10000.0, 10000.0)
@@ -814,6 +845,13 @@ def normalize_entity_state(data: Any) -> Optional[dict]:
         if kind == "ghast":
             result["charge"] = integer("charge", 0, -40, 20)
             result["prev_charge"] = integer("prev_charge", result["charge"], -40, 20)
+        elif kind == "squid":
+            result["swim_phase"] = number("swim_phase", 0.0, -10000.0, 10000.0)
+            result["prev_swim_phase"] = number("prev_swim_phase", result["swim_phase"], -10000.0, 10000.0)
+            result["body_yaw_animation"] = number("body_yaw_animation", 0.0, -100000.0, 100000.0)
+            result["prev_body_yaw_animation"] = number("prev_body_yaw_animation", result["body_yaw_animation"], -100000.0, 100000.0)
+            result["tentacle_angle"] = number("tentacle_angle", 0.0, -10.0, 10.0)
+            result["prev_tentacle_angle"] = number("prev_tentacle_angle", result["tentacle_angle"], -10.0, 10.0)
     elif kind == "arrow":
         result.update({
             "in_ground": bool(data.get("in_ground", False)),

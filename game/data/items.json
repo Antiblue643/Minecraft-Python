@@ -5,59 +5,68 @@
       "type": "food",
       "hold": "generic",
       "foodpoints": 4,
-      "id": 260
+      "id": 260,
+      "javaName": "apple"
     },
     "arrow": {
       "texture": 37,
       "type": "generic",
       "hold": "generic",
-      "id": 262
+      "id": 262,
+      "javaName": "arrow"
     },
     "boat": {
       "texture": 136,
       "type": "vehicle",
       "hold": "generic",
       "stack": 1,
-      "id": 333
+      "id": 333,
+      "javaName": "boat"
     },
     "book": {
       "texture": 59,
       "type": "generic",
       "hold": "generic",
-      "id": 340
+      "id": 340,
+      "javaName": "book"
     },
     "bow": {
       "texture": 21,
       "type": "ranged_weapon",
       "hold": "generic",
       "stack": 1,
-      "id": 261
+      "id": 261,
+      "javaName": "bow"
     },
     "bowl": {
       "texture": 71,
       "type": "generic",
       "hold": "generic",
-      "id": 281
+      "id": 281,
+      "javaName": "bowl"
     },
     "bread": {
       "texture": 41,
       "type": "food",
       "hold": "generic",
       "foodpoints": 5,
-      "id": 297
+      "id": 297,
+      "javaName": "bread"
     },
     "brick": {
       "texture": 22,
       "type": "generic",
       "hold": "generic",
-      "id": 336
+      "id": 336,
+      "javaName": "brick"
     },
     "bucket": {
       "texture": 74,
       "type": "bucket",
       "hold": "generic",
       "stack": 1,
-      "id": 325
+      "id": 325,
+      "javaName": "bucket"
     },
     "chainmail_boots": {
       "texture": 49,
@@ -66,7 +75,8 @@
       "slot": 3,
       "armor_level": 1,
       "material": "chain",
-      "id": 305
+      "id": 305,
+      "javaName": "bootsChain"
     },
     "chainmail_chestplate": {
       "texture": 17,
@@ -75,7 +85,8 @@
       "slot": 1,
       "armor_level": 1,
       "material": "chain",
-      "id": 303
+      "id": 303,
+      "javaName": "chestplateChain"
     },
     "chainmail_helmet": {
       "texture": 1,
@@ -84,7 +95,8 @@
       "slot": 0,
       "armor_level": 1,
       "material": "chain",
-      "id": 302
+      "id": 302,
+      "javaName": "helmetChain"
     },
     "chainmail_leggings": {
       "texture": 33,
@@ -93,33 +105,39 @@
       "slot": 2,
       "armor_level": 1,
       "material": "chain",
-      "id": 304
+      "id": 304,
+      "javaName": "leggingsChain"
     },
     "clay": {
       "texture": 57,
       "type": "generic",
       "hold": "generic",
-      "id": 337
+      "id": 337,
+      "javaName": "clay"
     },
     "coal": {
       "texture": 7,
       "type": "fuel",
       "hold": "generic",
       "fueltime": 1200,
-      "id": 263
+      "id": 263,
+      "subtypes": true,
+      "javaName": "coal"
     },
     "cooked_porkchop": {
       "texture": 88,
       "type": "food",
       "hold": "generic",
       "foodpoints": 8,
-      "id": 320
+      "id": 320,
+      "javaName": "porkchopCooked"
     },
     "diamond": {
       "texture": 55,
       "type": "generic",
       "hold": "generic",
-      "id": 264
+      "id": 264,
+      "javaName": "emerald"
     },
     "diamond_axe": {
       "texture": 115,
@@ -128,7 +146,8 @@
       "hold": "tool",
       "tooltype": "axe",
       "level": 4,
-      "id": 279
+      "id": 279,
+      "javaName": "hatchetDiamond"
     },
     "diamond_boots": {
       "texture": 51,
@@ -137,7 +156,8 @@
       "slot": 3,
       "armor_level": 3,
       "material": "diamond",
-      "id": 313
+      "id": 313,
+      "javaName": "bootsDiamond"
     },
     "diamond_chestplate": {
       "texture": 19,
@@ -146,7 +166,8 @@
       "slot": 1,
       "armor_level": 3,
       "material": "diamond",
-      "id": 311
+      "id": 311,
+      "javaName": "chestplateDiamond"
     },
     "diamond_helmet": {
       "texture": 3,
@@ -155,7 +176,8 @@
       "slot": 0,
       "armor_level": 3,
       "material": "diamond",
-      "id": 310
+      "id": 310,
+      "javaName": "helmetDiamond"
     },
     "diamond_hoe": {
       "texture": 131,
@@ -164,7 +186,8 @@
       "hold": "tool",
       "tooltype": "hoe",
       "level": 4,
-      "id": 293
+      "id": 293,
+      "javaName": "hoeDiamond"
     },
     "diamond_leggings": {
       "texture": 35,
@@ -173,7 +196,8 @@
       "slot": 2,
       "armor_level": 3,
       "material": "diamond",
-      "id": 312
+      "id": 312,
+      "javaName": "leggingsDiamond"
     },
     "diamond_pickaxe": {
       "texture": 99,
@@ -182,7 +206,8 @@
       "hold": "tool",
       "tooltype": "pickaxe",
       "level": 4,
-      "id": 278
+      "id": 278,
+      "javaName": "pickaxeDiamond"
     },
     "diamond_shovel": {
       "texture": 83,
@@ -191,7 +216,8 @@
       "hold": "tool",
       "tooltype": "shovel",
       "level": 4,
-      "id": 277
+      "id": 277,
+      "javaName": "shovelDiamond"
     },
     "diamond_sword": {
       "texture": 67,
@@ -199,19 +225,22 @@
       "type": "melee_weapon",
       "hold": "tool",
       "damage": 10,
-      "id": 276
+      "id": 276,
+      "javaName": "swordDiamond"
     },
     "feather": {
       "texture": 24,
       "type": "generic",
       "hold": "generic",
-      "id": 288
+      "id": 288,
+      "javaName": "feather"
     },
     "flint": {
       "texture": 6,
       "type": "generic",
       "hold": "generic",
-      "id": 318
+      "id": 318,
+      "javaName": "flint"
     },
     "flint_and_steel": {
       "texture": 5,
@@ -221,7 +250,8 @@
       "level": 0,
       "stack": 1,
       "durability": 64,
-      "id": 259
+      "id": 259,
+      "javaName": "flintAndSteel"
     },
     "gold_axe": {
       "texture": 116,
@@ -230,7 +260,8 @@
       "hold": "tool",
       "tooltype": "axe",
       "level": 1.5,
-      "id": 286
+      "id": 286,
+      "javaName": "hatchetGold"
     },
     "gold_boots": {
       "texture": 52,
@@ -239,7 +270,8 @@
       "slot": 3,
       "armor_level": 1,
       "material": "gold",
-      "id": 317
+      "id": 317,
+      "javaName": "bootsGold"
     },
     "gold_chestplate": {
       "texture": 20,
@@ -248,7 +280,8 @@
       "slot": 1,
       "armor_level": 1,
       "material": "gold",
-      "id": 315
+      "id": 315,
+      "javaName": "chestplateGold"
     },
     "gold_helmet": {
       "texture": 4,
@@ -257,7 +290,8 @@
       "slot": 0,
       "armor_level": 1,
       "material": "gold",
-      "id": 314
+      "id": 314,
+      "javaName": "helmetGold"
     },
     "gold_hoe": {
       "texture": 132,
@@ -266,13 +300,15 @@
       "hold": "tool",
       "tooltype": "hoe",
       "level": 1,
-      "id": 294
+      "id": 294,
+      "javaName": "hoeGold"
     },
     "gold_ingot": {
       "texture": 39,
       "type": "generic",
       "hold": "generic",
-      "id": 266
+      "id": 266,
+      "javaName": "ingotGold"
     },
     "gold_leggings": {
       "texture": 36,
@@ -281,7 +317,8 @@
       "slot": 2,
       "armor_level": 1,
       "material": "gold",
-      "id": 316
+      "id": 316,
+      "javaName": "leggingsGold"
     },
     "gold_pickaxe": {
       "texture": 100,
@@ -290,7 +327,8 @@
       "hold": "tool",
       "tooltype": "pickaxe",
       "level": 1.5,
-      "id": 285
+      "id": 285,
+      "javaName": "pickaxeGold"
     },
     "gold_shovel": {
       "texture": 84,
@@ -299,7 +337,8 @@
       "hold": "tool",
       "tooltype": "shovel",
       "level": 1.5,
-      "id": 284
+      "id": 284,
+      "javaName": "shovelGold"
     },
     "gold_sword": {
       "texture": 68,
@@ -307,20 +346,23 @@
       "type": "melee_weapon",
       "hold": "tool",
       "damage": 4,
-      "id": 283
+      "id": 283,
+      "javaName": "swordGold"
     },
     "golden_apple": {
       "texture": 11,
       "type": "food",
       "hold": "generic",
       "foodpoints": 42,
-      "id": 322
+      "id": 322,
+      "javaName": "appleGold"
     },
     "gunpowder": {
       "texture": 40,
       "type": "generic",
       "hold": "generic",
-      "id": 289
+      "id": 289,
+      "javaName": "sulphur"
     },
     "iron_axe": {
       "texture": 114,
@@ -332,7 +374,8 @@
       "id": 258,
       "aliases": [
         "axe"
-      ]
+      ],
+      "javaName": "hatchetIron"
     },
     "iron_boots": {
       "texture": 50,
@@ -341,7 +384,8 @@
       "slot": 3,
       "armor_level": 2,
       "material": "iron",
-      "id": 309
+      "id": 309,
+      "javaName": "bootsIron"
     },
     "iron_chestplate": {
       "texture": 18,
@@ -350,7 +394,8 @@
       "slot": 1,
       "armor_level": 2,
       "material": "iron",
-      "id": 307
+      "id": 307,
+      "javaName": "chestplateIron"
     },
     "iron_helmet": {
       "texture": 2,
@@ -359,7 +404,8 @@
       "slot": 0,
       "armor_level": 2,
       "material": "iron",
-      "id": 306
+      "id": 306,
+      "javaName": "helmetIron"
     },
     "iron_hoe": {
       "texture": 130,
@@ -368,13 +414,15 @@
       "hold": "tool",
       "tooltype": "hoe",
       "level": 3,
-      "id": 292
+      "id": 292,
+      "javaName": "hoeIron"
     },
     "iron_ingot": {
       "texture": 23,
       "type": "generic",
       "hold": "generic",
-      "id": 265
+      "id": 265,
+      "javaName": "ingotIron"
     },
     "iron_leggings": {
       "texture": 34,
@@ -383,7 +431,8 @@
       "slot": 2,
       "armor_level": 2,
       "material": "iron",
-      "id": 308
+      "id": 308,
+      "javaName": "leggingsIron"
     },
     "iron_pickaxe": {
       "texture": 98,
@@ -395,7 +444,8 @@
       "id": 257,
       "aliases": [
         "pickaxe"
-      ]
+      ],
+      "javaName": "pickaxeIron"
     },
     "iron_shovel": {
       "texture": 82,
@@ -407,7 +457,8 @@
       "id": 256,
       "aliases": [
         "shovel"
-      ]
+      ],
+      "javaName": "shovelIron"
     },
     "iron_sword": {
       "texture": 66,
@@ -415,7 +466,8 @@
       "type": "melee_weapon",
       "hold": "tool",
       "damage": 8,
-      "id": 267
+      "id": 267,
+      "javaName": "swordIron"
     },
     "lava_bucket": {
       "texture": 76,
@@ -423,13 +475,15 @@
       "hold": "generic",
       "stack": 1,
       "block": "lava",
-      "id": 327
+      "id": 327,
+      "javaName": "bucketLava"
     },
     "leather": {
       "texture": 103,
       "type": "generic",
       "hold": "generic",
-      "id": 334
+      "id": 334,
+      "javaName": "leather"
     },
     "leather_boots": {
       "texture": 48,
@@ -438,7 +492,8 @@
       "slot": 3,
       "armor_level": 0,
       "material": "leather",
-      "id": 301
+      "id": 301,
+      "javaName": "bootsCloth"
     },
     "leather_chestplate": {
       "texture": 16,
@@ -447,7 +502,8 @@
       "slot": 1,
       "armor_level": 0,
       "material": "leather",
-      "id": 299
+      "id": 299,
+      "javaName": "chestplateCloth"
     },
     "leather_helmet": {
       "texture": 0,
@@ -456,7 +512,8 @@
       "slot": 0,
       "armor_level": 0,
       "material": "leather",
-      "id": 298
+      "id": 298,
+      "javaName": "helmetCloth"
     },
     "leather_leggings": {
       "texture": 32,
@@ -465,21 +522,25 @@
       "slot": 2,
       "armor_level": 0,
       "material": "leather",
-      "id": 300
+      "id": 300,
+      "javaName": "leggingsCloth"
     },
     "milk_bucket": {
       "texture": 77,
       "type": "generic",
       "hold": "generic",
       "stack": 1,
-      "id": 335
+      "id": 335,
+      "container": "bucket",
+      "javaName": "milk"
     },
     "minecart": {
       "texture": 135,
       "type": "vehicle",
       "hold": "generic",
       "stack": 1,
-      "id": 328
+      "id": 328,
+      "javaName": "minecart"
     },
     "mushroom_stew": {
       "texture": 72,
@@ -488,34 +549,39 @@
       "foodpoints": 10,
       "returns": "bowl",
       "stack": 1,
-      "id": 282
+      "id": 282,
+      "javaName": "mushroomStew"
     },
     "painting": {
       "texture": 26,
       "type": "decoration",
       "hold": "generic",
       "stack": 64,
-      "id": 321
+      "id": 321,
+      "javaName": "painting"
     },
     "paper": {
       "texture": 58,
       "type": "generic",
       "hold": "generic",
-      "id": 339
+      "id": 339,
+      "javaName": "paper"
     },
     "raw_porkchop": {
       "texture": 87,
       "type": "food",
       "hold": "generic",
       "foodpoints": 3,
-      "id": 319
+      "id": 319,
+      "javaName": "porkchopRaw"
     },
     "redstone": {
       "texture": 56,
       "type": "generic",
       "hold": "generic",
       "id": 331,
-      "block": "redstone_wire"
+      "block": "redstone_wire",
+      "javaName": "redstone"
     },
     "reeds": {
       "texture": 27,
@@ -526,21 +592,24 @@
       "block": "reed",
       "aliases": [
         "reed"
-      ]
+      ],
+      "javaName": "reeds"
     },
     "saddle": {
       "texture": 104,
       "type": "generic",
       "hold": "generic",
       "stack": 1,
-      "id": 329
+      "id": 329,
+      "javaName": "saddle"
     },
     "seeds": {
       "texture": 9,
       "type": "plant",
       "hold": "generic",
       "block": "wheat",
-      "id": 295
+      "id": 295,
+      "javaName": "seeds"
     },
     "sign": {
       "texture": 42,
@@ -548,26 +617,30 @@
       "hold": "generic",
       "stack": 1,
       "block": "sign",
-      "id": 323
+      "id": 323,
+      "javaName": "sign"
     },
     "slimeball": {
       "texture": 30,
       "type": "generic",
       "hold": "generic",
-      "id": 341
+      "id": 341,
+      "javaName": "slimeball"
     },
     "snowball": {
       "type": "generic",
       "hold": "generic",
       "stack": 16,
       "texture": 14,
-      "id": 332
+      "id": 332,
+      "javaName": "snowball"
     },
     "stick": {
       "texture": 53,
       "type": "generic",
       "hold": "generic",
-      "id": 280
+      "id": 280,
+      "javaName": "stick"
     },
     "stone_axe": {
       "texture": 113,
@@ -576,7 +649,8 @@
       "hold": "tool",
       "tooltype": "axe",
       "level": 2,
-      "id": 275
+      "id": 275,
+      "javaName": "hatchetStone"
     },
     "stone_hoe": {
       "texture": 129,
@@ -585,7 +659,8 @@
       "hold": "tool",
       "tooltype": "hoe",
       "level": 2,
-      "id": 291
+      "id": 291,
+      "javaName": "hoeStone"
     },
     "stone_pickaxe": {
       "texture": 97,
@@ -594,7 +669,8 @@
       "hold": "tool",
       "tooltype": "pickaxe",
       "level": 2,
-      "id": 274
+      "id": 274,
+      "javaName": "pickaxeStone"
     },
     "stone_shovel": {
       "texture": 81,
@@ -603,7 +679,8 @@
       "hold": "tool",
       "tooltype": "shovel",
       "level": 2,
-      "id": 273
+      "id": 273,
+      "javaName": "shovelStone"
     },
     "stone_sword": {
       "texture": 65,
@@ -611,13 +688,15 @@
       "type": "melee_weapon",
       "hold": "tool",
       "damage": 6,
-      "id": 272
+      "id": 272,
+      "javaName": "swordStone"
     },
     "string": {
       "texture": 8,
       "type": "generic",
       "hold": "generic",
-      "id": 287
+      "id": 287,
+      "javaName": "string"
     },
     "water_bucket": {
       "texture": 75,
@@ -625,13 +704,15 @@
       "hold": "generic",
       "stack": 1,
       "block": "water",
-      "id": 326
+      "id": 326,
+      "javaName": "bucketWater"
     },
     "wheat": {
       "texture": 25,
       "type": "generic",
       "hold": "generic",
-      "id": 296
+      "id": 296,
+      "javaName": "wheat"
     },
     "wooden_axe": {
       "texture": 112,
@@ -640,7 +721,8 @@
       "hold": "tool",
       "tooltype": "axe",
       "level": 1,
-      "id": 271
+      "id": 271,
+      "javaName": "hatchetWood"
     },
     "wooden_hoe": {
       "texture": 128,
@@ -649,7 +731,8 @@
       "hold": "tool",
       "tooltype": "hoe",
       "level": 1,
-      "id": 290
+      "id": 290,
+      "javaName": "hoeWood"
     },
     "wooden_pickaxe": {
       "texture": 96,
@@ -658,7 +741,8 @@
       "hold": "tool",
       "tooltype": "pickaxe",
       "level": 1,
-      "id": 270
+      "id": 270,
+      "javaName": "pickaxeWood"
     },
     "wooden_shovel": {
       "texture": 80,
@@ -667,7 +751,8 @@
       "hold": "tool",
       "tooltype": "shovel",
       "level": 1,
-      "id": 269
+      "id": 269,
+      "javaName": "shovelWood"
     },
     "wooden_sword": {
       "texture": 64,
@@ -675,49 +760,56 @@
       "type": "melee_weapon",
       "hold": "tool",
       "damage": 4,
-      "id": 268
+      "id": 268,
+      "javaName": "swordWood"
     },
     "record_13": {
       "texture": 240,
       "type": "music_disc",
       "hold": "generic",
       "stack": 1,
-      "id": 2256
+      "id": 2256,
+      "javaName": "record"
     },
     "record_cat": {
       "texture": 241,
       "type": "music_disc",
       "hold": "generic",
       "stack": 1,
-      "id": 2257
+      "id": 2257,
+      "javaName": "record"
     },
     "egg": {
       "texture": 12,
       "type": "generic",
       "hold": "generic",
       "stack": 16,
-      "id": 344
+      "id": 344,
+      "javaName": "egg"
     },
     "compass": {
       "texture": 54,
       "type": "generic",
       "hold": "generic",
       "id": 345,
-      "stack": 1
+      "stack": 1,
+      "javaName": "compass"
     },
     "chest_minecart": {
       "texture": 151,
       "type": "vehicle",
       "hold": "generic",
       "stack": 1,
-      "id": 342
+      "id": 342,
+      "javaName": "minecartChest"
     },
     "furnace_minecart": {
       "texture": 167,
       "type": "vehicle",
       "hold": "generic",
       "stack": 1,
-      "id": 343
+      "id": 343,
+      "javaName": "minecartFurnace"
     },
     "fishing_rod": {
       "texture": 69,
@@ -726,34 +818,70 @@
       "id": 346,
       "stack": 1,
       "durability": 64,
-      "rotate_around": true
+      "rotate_around": true,
+      "javaName": "fishingRod"
     },
     "clock": {
       "texture": 70,
       "type": "generic",
       "hold": "generic",
       "stack": 1,
-      "id": 347
+      "id": 347,
+      "javaName": "clock"
     },
     "glowstone_dust": {
       "texture": 73,
       "type": "generic",
       "hold": "generic",
-      "id": 348
+      "id": 348,
+      "javaName": "yellowDust"
     },
     "raw_fish": {
       "texture": 89,
       "type": "food",
       "hold": "generic",
       "foodpoints": 2,
-      "id": 349
+      "id": 349,
+      "javaName": "fishRaw"
     },
     "cooked_fish": {
       "texture": 90,
       "type": "food",
       "hold": "generic",
       "foodpoints": 5,
-      "id": 350
+      "id": 350,
+      "javaName": "fishCooked"
+    },
+    "dye": {
+      "texture": 78,
+      "type": "generic",
+      "hold": "generic",
+      "subtypes": true,
+      "id": 351,
+      "javaName": "dyePowder"
+    },
+    "bone": {
+      "texture": 28,
+      "type": "generic",
+      "hold": "generic",
+      "id": 352,
+      "javaName": "bone"
+    },
+    "sugar": {
+      "texture": 13,
+      "type": "generic",
+      "hold": "generic",
+      "id": 353,
+      "javaName": "sugar"
+    },
+    "cake": {
+      "texture": 29,
+      "type": "block_item",
+      "hold": "generic",
+      "stack": 1,
+      "id": 354,
+      "block": "cake",
+      "javaName": "cake"
     }
   }
 }

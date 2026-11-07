@@ -10,6 +10,6 @@ Contributions are welcome for:
 Please keep big updates to me. If you have an idea for a larger
 change, check with me before starting work on it.
 
-The target version is `beta 1.1_02`
+The target version is `beta 1.2_02`
 
 ### *Please don't force-push!*

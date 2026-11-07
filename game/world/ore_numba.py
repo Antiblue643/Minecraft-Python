@@ -17,6 +17,16 @@ MAX_PLACEMENTS = 16384
 
 
 @njit(cache=True, nogil=True, fastmath=False)
+def _sample_ore_vein_height(state, height):
+    height = int(height)
+    if height < 0:
+        state, first_y = _next_int(state, -height)
+        state, second_y = _next_int(state, -height)
+        return state, first_y + second_y
+    return _next_int(state, height)
+
+
+@njit(cache=True, nogil=True, fastmath=False)
 def populate_ore_veins(blocks4, start_x, start_z, state, stone_id, ore_ids,
                        vein_sizes, attempts, heights, sin_table, out):
     count = 0
@@ -25,7 +35,8 @@ def populate_ore_veins(blocks4, start_x, start_z, state, stone_id, ore_ids,
         ore_id = ore_ids[ore_index]
         for _attempt in range(int(attempts[ore_index])):
             state, rx = _next_int(state, 16)
-            state, y = _next_int(state, int(heights[ore_index]))
+            height = int(heights[ore_index])
+            state, y = _sample_ore_vein_height(state, height)
             state, rz = _next_int(state, 16)
             x = start_x + rx
             z = start_z + rz

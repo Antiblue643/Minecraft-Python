@@ -74,7 +74,7 @@ CLASSIC_ENTITY_ID_TO_KEY = {
 }
 
 CLASSIC_LIVING_ENTITY_KEYS = (
-    "pig", "sheep", "cow", "chicken", "giant", "zombie", "zombie_pigman", "ghast", "skeleton", "spider", "creeper", "slime", "monster", "mob",
+    "pig", "sheep", "cow", "chicken", "giant", "zombie", "zombie_pigman", "ghast", "skeleton", "spider", "creeper", "slime", "monster", "mob", "squid",
 )
 CLASSIC_LIVING_ENTITY_IDS = tuple(
     CLASSIC_ENTITY_KEY_TO_ID[key] for key in CLASSIC_LIVING_ENTITY_KEYS

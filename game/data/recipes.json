@@ -1370,6 +1370,528 @@
         "x"
       ],
       "amount": 1
+    },
+    "sandstone": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "sand"
+      },
+      "shape": [
+        "xx",
+        "xx"
+      ],
+      "amount": 1
+    },
+    "lapis_block": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "dye:4"
+      },
+      "shape": [
+        "xxx",
+        "xxx",
+        "xxx"
+      ],
+      "amount": 1
+    },
+    "lapis_lazuli": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "lapis_block"
+      },
+      "shape": [
+        "a"
+      ],
+      "amount": 9,
+      "result": "dye:4"
+    },
+    "sugar": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "reeds"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1
+    },
+    "torch_charcoal": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "coal:1",
+        "y": "stick"
+      },
+      "shape": [
+        "x",
+        "y"
+      ],
+      "amount": 4,
+      "result": "torch"
+    },
+    "wool_black": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:15"
+    },
+    "wool_red": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:1",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:14"
+    },
+    "wool_green": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:2",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:13"
+    },
+    "wool_brown": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:3",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:12"
+    },
+    "wool_blue": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:4",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:11"
+    },
+    "wool_purple": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:5",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:10"
+    },
+    "wool_cyan": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:6",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:9"
+    },
+    "wool_silver": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:7",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:8"
+    },
+    "wool_gray": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:8",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:7"
+    },
+    "wool_pink": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:9",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:6"
+    },
+    "wool_lime": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:10",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:5"
+    },
+    "wool_yellow": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:11",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:4"
+    },
+    "wool_lightBlue": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:12",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:3"
+    },
+    "wool_magenta": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:13",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:2"
+    },
+    "wool_orange": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:14",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool:1"
+    },
+    "wool_white": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:15",
+        "b": "wool"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 1,
+      "result": "wool"
+    },
+    "dandelion_yellow": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "yellow_flower"
+      },
+      "shape": [
+        "a"
+      ],
+      "amount": 2,
+      "result": "dye:11"
+    },
+    "rose_red": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "red_flower"
+      },
+      "shape": [
+        "a"
+      ],
+      "amount": 2,
+      "result": "dye:1"
+    },
+    "bone_meal": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "bone"
+      },
+      "shape": [
+        "a"
+      ],
+      "amount": 3,
+      "result": "dye:15"
+    },
+    "dye_pink": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:1",
+        "b": "dye:15"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:9"
+    },
+    "dye_orange": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:1",
+        "b": "dye:11"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:14"
+    },
+    "dye_lime": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:2",
+        "b": "dye:15"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:10"
+    },
+    "dye_gray": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye",
+        "b": "dye:15"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:8"
+    },
+    "dye_silver": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:8",
+        "b": "dye:15"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:7"
+    },
+    "dye_silver_3": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye",
+        "b": "dye:15",
+        "c": "dye:15"
+      },
+      "shape": [
+        "abc"
+      ],
+      "amount": 3,
+      "result": "dye:7"
+    },
+    "dye_light_blue": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:4",
+        "b": "dye:15"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:12"
+    },
+    "dye_cyan": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:4",
+        "b": "dye:2"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:6"
+    },
+    "dye_purple": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:4",
+        "b": "dye:1"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:5"
+    },
+    "dye_magenta_2": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:5",
+        "b": "dye:9"
+      },
+      "shape": [
+        "ab"
+      ],
+      "amount": 2,
+      "result": "dye:13"
+    },
+    "dye_magenta_3": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:4",
+        "b": "dye:1",
+        "c": "dye:9"
+      },
+      "shape": [
+        "abc"
+      ],
+      "amount": 3,
+      "result": "dye:13"
+    },
+    "dye_magenta_4": {
+      "station": "crafting",
+      "shapeless": true,
+      "key": {
+        "a": "dye:4",
+        "b": "dye:1",
+        "c": "dye:1",
+        "d": "dye:15"
+      },
+      "shape": [
+        "ab",
+        "cd"
+      ],
+      "amount": 4,
+      "result": "dye:13"
+    },
+    "cactus_green": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "cactus"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1,
+      "result": "dye:2"
+    },
+    "charcoal": {
+      "station": "furnace",
+      "shapeless": true,
+      "key": {
+        "x": "log"
+      },
+      "shape": [
+        "x"
+      ],
+      "amount": 1,
+      "result": "coal:1"
+    },
+    "dispenser": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "c": "cobblestone",
+        "b": "bow",
+        "r": "redstone"
+      },
+      "shape": [
+        "ccc",
+        "cbc",
+        "crc"
+      ],
+      "amount": 1
+    },
+    "cake": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "m": "milk_bucket",
+        "s": "sugar",
+        "e": "egg",
+        "w": "wheat"
+      },
+      "shape": [
+        "mmm",
+        "ses",
+        "www"
+      ],
+      "amount": 1
     }
   }
 }

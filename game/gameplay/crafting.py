@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from game.entities.item import ItemStack
+from game.entities.item import Item, ItemStack
 
 RECIPES_PATH = Path(__file__).resolve().parents[1] / "data" / "recipes.json"
 GRID = 3
@@ -23,9 +23,33 @@ class CraftingRecipe:
     def size(self):
         return len(self.ingredients) if self.shapeless else self.width * self.height
 
+    @staticmethod
+    def _ingredient_matches(wanted, actual):
+        if wanted == actual:
+            return True
+        if wanted is None or actual is None:
+            return False
+        wanted_id, wanted_damage = Item.parse_subtype_key(wanted)
+        actual_id, actual_damage = Item.parse_subtype_key(actual)
+        if wanted_id != actual_id:
+            return False
+        if ":" not in str(wanted):
+            return True
+        return wanted_damage == actual_damage
+
     def matches(self, cells):
         if self.shapeless:
-            return sorted(c for c in cells if c is not None) == self.ingredients
+            remaining = [cell for cell in cells if cell is not None]
+            if len(remaining) != len(self.ingredients):
+                return False
+            for wanted in self.ingredients:
+                for index, actual in enumerate(remaining):
+                    if self._ingredient_matches(wanted, actual):
+                        remaining.pop(index)
+                        break
+                else:
+                    return False
+            return not remaining
         for ox in range(GRID - self.width + 1):
             for oy in range(GRID - self.height + 1):
                 if (self._check(cells, ox, oy, True)
@@ -41,12 +65,13 @@ class CraftingRecipe:
                 if 0 <= px < self.width and 0 <= py < self.height:
                     col = self.width - px - 1 if mirrored else px
                     want = self.pattern[col + py * self.width]
-                if cells[x + y * GRID] != want:
+                if not self._ingredient_matches(want, cells[x + y * GRID]):
                     return False
         return True
 
     def create_result(self):
-        return ItemStack(self.result_id, self.count)
+        result_id, damage = Item.parse_subtype_key(self.result_id)
+        return ItemStack(result_id, self.count, damage)
 
 
 class CraftingManager:
@@ -133,7 +158,7 @@ class CraftingGrid:
             for x in range(self.width):
                 stack = self.stacks[x + y * self.width]
                 if stack is not None and stack.count > 0:
-                    cells[x + y * GRID] = stack.id
+                    cells[x + y * GRID] = stack.subtype_key
         return cells
 
     def consume_one_each(self):
@@ -141,7 +166,14 @@ class CraftingGrid:
             if stack is not None:
                 stack.count -= 1
                 if stack.count <= 0:
-                    self.stacks[i] = None
+                    container = Item.definition(stack.id).get("container")
+                    if container:
+                        try:
+                            self.stacks[i] = type(stack)(container, 1, 0)
+                        except Exception:
+                            self.stacks[i] = ItemStack(container, 1, 0)
+                    else:
+                        self.stacks[i] = None
 
     def take_all(self):
         taken = [s for s in self.stacks if s is not None]

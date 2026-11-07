@@ -73,6 +73,10 @@
     "snow": {
       "class": "SnowParticle",
       "arguments": "position"
+    },
+    "note": {
+      "class": "NoteParticle",
+      "arguments": "motion"
     }
   }
 }

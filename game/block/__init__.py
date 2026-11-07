@@ -131,6 +131,9 @@ class Block:
                     meta = self.world.get_metadata(x, y - 1, z) & 7
             except Exception:
                 pass
+        if bt == "cake":
+            return [(1.0 + (meta % 6) * 2.0) / 16.0, 0.0, 1.0 / 16.0,
+                    15.0 / 16.0, 8.0 / 16.0, 15.0 / 16.0]
         if bt == "rail":
             return [0.0, 0.0, 0.0, 1.0, 10.0 / 16.0 if 2 <= meta <= 5 else 2.0 / 16.0, 1.0]
         if bt == "lever":
@@ -248,6 +251,9 @@ class Block:
             return []
         if self.block_type == "farmland":
             return [(-0.5, -0.5, -0.5, 0.5, 0.5, 0.5)]
+        if self.block_type == "cake":
+            x0, _y0, z0, x1, _y1, z1 = self._oriented_bounds()
+            return [Block.classic_to_center((x0, 0.0, z0, x1, 7.0 / 16.0, z1))]
         if isinstance(self.collision, (list, tuple)):
             return [Block.classic_to_center(self.collision)]
         if self.model_name == "stairs" or self.block_type in ("stairs", "cobblestone_stairs"):
@@ -379,6 +385,8 @@ class Block:
             return self._get_snow_layer_mesh_data()
         if self.model_name == "cactus" or self.block_type == "cactus":
             return self._get_cactus_mesh_data()
+        if self.block_type == "cake":
+            return self._get_cake_mesh_data()
         if self.model_name == "cube":
             return self._get_cube_mesh_data()
         if self.model_name == "farmland" or self.block_type == "farmland":
@@ -1203,6 +1211,63 @@ class Block:
         ]
 
 
+    def _get_cake_mesh_data(self):
+        meta = min(5, self._resolve_meta())
+        x0 = (1.0 + meta * 2.0) / 16.0
+        x1 = 15.0 / 16.0
+        y0, y1 = 0.0, 8.0 / 16.0
+        z0, z1 = 1.0 / 16.0, 15.0 / 16.0
+        px, py, pz = (float(v) for v in self.pos)
+        out = []
+        atlas_epsilon = 0.01 / 256.0
+
+        for _name, direction, original_quad, cull_backface in self._CUBE_FACES:
+            local_quad = []
+            for vx, vy, vz in original_quad:
+                bx, by, bz = vx + 0.5, vy + 0.5, vz + 0.5
+                local_quad.append((
+                    x0 + bx * (x1 - x0) - 0.5,
+                    y0 + by * (y1 - y0) - 0.5,
+                    z0 + bz * (z1 - z0) - 0.5,
+                ))
+
+            if direction == (0, 1, 0):
+                texture = 121  
+            elif direction == (0, -1, 0):
+                texture = 124  
+            elif direction == (-1, 0, 0) and meta > 0:
+                texture = 123  
+            else:
+                texture = 122  
+
+            u0, v0 = self._atlas_uv(texture)
+            uvs = []
+            for vx, vy, vz in local_quad:
+                bx, by, bz = vx + 0.5, vy + 0.5, vz + 0.5
+                if direction == (0, 1, 0) or direction == (0, -1, 0):
+                    uf, vf = bx, bz
+                elif direction == (0, 0, 1):
+                    uf, vf = bx, 0.5 + by
+                elif direction == (0, 0, -1):
+                    uf, vf = (x0 + x1) - bx, 0.5 + by
+                elif direction == (-1, 0, 0):
+                    uf, vf = bz, 0.5 + by
+                else:
+                    uf, vf = (z0 + z1) - bz, 0.5 + by
+
+                u = u0 + uf / 16.0
+                v = v0 + vf / 16.0
+                if abs(uf - x1) < 1e-8 or abs(uf - z1) < 1e-8 or abs(uf - y1) < 1e-8:
+                    u -= atlas_epsilon
+                if abs(vf - z1) < 1e-8 or abs(vf - 1.0) < 1e-8:
+                    v -= atlas_epsilon
+                uvs.append((u, v))
+
+            vertices = [(px + vx, py + vy, pz + vz) for vx, vy, vz in local_quad]
+            color = default_lighting.face_color(direction)
+            out.append((vertices, tuple(uvs), cull_backface, False, color))
+        return out
+
     def _get_cube_mesh_data(self):
         px, py, pz = self.pos
         all_verts = []
@@ -1219,12 +1284,19 @@ class Block:
                 faces_def[side_index] = 68
 
         if is_list and self.block_type in (
-            "furnace", "furnace_lit", "chest", "pumpkin", "jack_o_lantern",
+            "furnace", "furnace_lit", "chest", "dispenser", "pumpkin", "jack_o_lantern",
         ) and not (
             self.block_type == "chest" and getattr(self, "_chest_faces_override", False)
         ):
             meta = getattr(self, "_mesh_meta", None)
-            if meta is None and self.world is not None:
+            if self.world is not None and self.block_type == "dispenser":
+                try:
+                    meta = self.world.get_metadata(
+                        int(self.pos[0]), int(self.pos[1]), int(self.pos[2]),
+                    )
+                except Exception:
+                    pass
+            elif meta is None and self.world is not None:
                 try:
                     meta = self.world.get_metadata(int(self.pos[0]), int(self.pos[1]), int(self.pos[2]))
                 except Exception:

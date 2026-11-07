@@ -46,7 +46,9 @@ class GameInputMixin:
 
             elif event.type == pg.TEXTINPUT:
                 if cur is not None:
-                    cur.text_typed(event.text)
+                    text_typed = getattr(cur, "text_typed", None)
+                    if callable(text_typed):
+                        text_typed(event.text)
 
             elif event.type == pg.MOUSEMOTION:
                 if cur is not None:
@@ -90,7 +92,16 @@ class GameInputMixin:
         s = self.settings
         player = self.player
         key = event.key
-        if key == pg.K_ESCAPE:
+        if key == pg.K_F2:
+            from game.app.screenshot import save_screenshot
+            try:
+                path = save_screenshot()
+            except (OSError, pg.error) as exc:
+                self.add_chat_message(f"Screenshot failed: {exc}")
+            else:
+                if path is not None:
+                    self.add_chat_message(f"Saved screenshot: {path.name}")
+        elif key == pg.K_ESCAPE:
             self.display_gui_screen(GuiIngameMenu())
         elif key == s.key_inventory.key:
             player.stop_digging()
