@@ -12,7 +12,7 @@ from engine.portal_texture import portal_animator
 from engine.compass_texture import compass_animator
 from engine.clock_texture import clock_animator
 from game.block import Block
-from game.gameplay.input import MovementFilteredKeyState
+from game.gameplay.input import MovementFilteredKeyState, MouseFilter
 from game.entities.item import Item
 from game.entities import player_model
 from game.gameplay.screens import GuiContainer, GuiInventory
@@ -23,6 +23,7 @@ from game.rendering.overlays import (
     check_gl_error, destroy_overlay_is_entity_pass, draw_block_destroy_progress, draw_block_outline,
     draw_chunk_borders, draw_entity_hitboxes, render_precipitation,
 )
+from game.rendering.entity_debug import draw_entity_id_tags
 
 
 class GameLoopMixin:
@@ -122,10 +123,23 @@ class GameLoopMixin:
 
             if self._grabbed:
                 mrx, mry = pg.mouse.get_rel()
-                if self.settings.invert_mouse:
-                    mry = -mry
                 mouse_scale = float(getattr(self.settings, "mouse_sensitivity_scale", 1.0))
-                player.handle_mouse(mrx * mouse_scale, mry * mouse_scale)
+                mouse_dx = mrx * mouse_scale
+                mouse_dy = mry * mouse_scale
+                if bool(getattr(self.settings, "smooth_mouse", False)):
+                    if not hasattr(self, "_smooth_mouse_filter_x"):
+                        self._smooth_mouse_filter_x = MouseFilter()
+                        self._smooth_mouse_filter_y = MouseFilter()
+                    smoothing = 0.05 * mouse_scale
+                    mouse_dx = self._smooth_mouse_filter_x.filter(
+                        mouse_dx, smoothing,
+                    )
+                    mouse_dy = self._smooth_mouse_filter_y.filter(
+                        mouse_dy, smoothing,
+                    )
+                if self.settings.invert_mouse:
+                    mouse_dy = -mouse_dy
+                player.handle_mouse(mouse_dx, mouse_dy)
 
             if input_integration is not None:
                 input_integration.update_look(dt, enabled=not paused)
@@ -243,7 +257,7 @@ class GameLoopMixin:
 
         partial = world.partial_ticks() if world is not None else 0.0
         player_partial = getattr(player, "animation_partial", partial) if player is not None else partial
-        f1_held = self._f1_is_held()
+        hide_gui = bool(getattr(self, "hide_gui", False))
         if world is not None:
             sky_rgb = world.get_sky_color(partial, player=player)
             base_fog_rgb = world.get_fog_color(partial)
@@ -288,9 +302,7 @@ class GameLoopMixin:
             third_person_camera = None
             first_person_camera = False
             if self.third_person_view and player is not None:
-                front_view = bool(f1_held) or bool(
-                    getattr(self, "third_person_front_view", False)
-                )
+                front_view = bool(getattr(self, "third_person_front_view", False))
                 camera_distance = 6.0 if front_view else 4.0
                 side, up, back = player_model.third_person_camera_offset(
                     player, player_partial, camera_distance, front=front_view
@@ -300,6 +312,7 @@ class GameLoopMixin:
                 if _anaglyph_pass:
                     glTranslatef(-float(_eye_offset), 0.0, 0.0)
                 player_model.apply_hurt_camera_effect(player, player_partial)
+                player_model.apply_view_bobbing(player, player_partial)
                 third_person_camera = (front_view, side, up, back)
             elif player is not None:
                 player_model.begin_first_person_camera_transform(
@@ -411,6 +424,14 @@ class GameLoopMixin:
                     session.render_players(player_partial)
                     session.render_name_tags(player_partial)
                 if self.gui.debug:
+                    draw_entity_id_tags(
+                        world, self.renderer, self.display, player, player_partial,
+                        include_player=bool(self.third_person_view),
+                        extra_entities=(
+                            tuple(getattr(session, "remote_players", {}).values())
+                            if session is not None and session.active else ()
+                        ),
+                    )
                     draw_entity_hitboxes(world, self.renderer)
                 targeted = player.get_targeted_block()
                 if targeted:
@@ -435,13 +456,31 @@ class GameLoopMixin:
                             )
                     except Exception:
                         pass
+                    render_x = float(player.pos[0])
+                    render_y = float(player.pos[1] - getattr(player, "render_y_offset", 0.0))
+                    render_z = float(player.pos[2])
+                    render_head_yaw = None
+                    render_head_pitch = None
+                    if getattr(player, "is_sleeping", False):
+                        try:
+                            from game.block.bed import (
+                                bed_sleep_render_offset, bed_sleep_body_yaw,
+                            )
+                            sleep_meta = int(getattr(player, "_bed_sleep_meta", 0) or 0)
+                            offset_x, offset_z = bed_sleep_render_offset(sleep_meta)
+                            render_x += offset_x
+                            render_z += offset_z
+                            body_yaw = bed_sleep_body_yaw(sleep_meta)
+                            render_head_yaw = body_yaw
+                            render_head_pitch = 0.0
+                        except Exception:
+                            pass
                     player_model.render_player_model(
                         player,
-                        player.pos[0],
-                        player.pos[1] - getattr(player, "render_y_offset", 0.0),
-                        player.pos[2],
-                        body_yaw,
-                        player_partial,
+                        render_x, render_y, render_z,
+                        body_yaw, player_partial,
+                        head_yaw=render_head_yaw,
+                        head_pitch=render_head_pitch,
                     )
                     if getattr(player, "_fire_ticks", 0) > 0:
                         player_model.render_player_fire_effect(
@@ -478,7 +517,11 @@ class GameLoopMixin:
             if portal_distortion_pushed:
                 glPopMatrix()
 
-            if player is not None and not self.third_person_view and not f1_held:
+            if (player is not None
+                    and not bool(getattr(player, "is_sleeping", False))
+                    and player_model.should_render_first_person_hand(
+                        player, third_person_view=bool(self.third_person_view),
+                        hide_gui=bool(hide_gui))):
                 with (gpu_profiler.measure("gpu.player_hand") if gpu_profiler is not None else nullcontext()):
                     glClear(GL_DEPTH_BUFFER_BIT)
                     player_model.render_first_person_hand(
@@ -498,9 +541,9 @@ class GameLoopMixin:
 
         d.setup_2d_projection()
         cur = self.current_screen
-        hide_hud = f1_held or (cur is not None and cur.does_gui_pause_game())
+        hide_hud = hide_gui or (cur is not None and cur.does_gui_pause_game())
         if world is not None:
-            if player is not None and not self.third_person_view and not f1_held:
+            if player is not None and not self.third_person_view and not hide_gui:
                 block_tile = player_model.inside_opaque_block_texture(player, world)
                 if block_tile is not None:
                     self.gui.draw_inside_block_overlay(block_tile)
@@ -511,8 +554,6 @@ class GameLoopMixin:
         if world is not None and not hide_hud:
             fps = int(self.clock.get_fps())
             self.gui.draw(player, world, fps, sound_debug_line=self.audio.debug_line())
-            if self._performance_log_status and time.monotonic() < self._performance_log_status_until:
-                d.draw_string(self._performance_log_status, (4, 44), (255, 255, 255), 2)
 
         if cur is not None:
             scale, _, _ = self.scaled_resolution()

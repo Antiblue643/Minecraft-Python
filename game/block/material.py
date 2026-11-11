@@ -194,6 +194,8 @@ _BLOCK_STEP_SOUND_OVERRIDES: Mapping[str, StepSound] = {
     "stone_pressure_plate": _sound("stone"),
     "stone_button": _sound("stone"),
     "redstone_wire": _sound("stone"),
+    "redstone_repeater": _sound("wood"),
+    "redstone_repeater_on": _sound("wood"),
     "stone_button": _sound("stone"),
     "iron_door": StepSound("metal", 1.0, 1.5),
 }

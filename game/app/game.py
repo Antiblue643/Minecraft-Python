@@ -39,6 +39,7 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         self.user_data_root = user_data_root()
         self.user_data_root.mkdir(parents=True, exist_ok=True)
         self.settings = GameSettings()
+        self._applied_smooth_lighting = bool(self.settings.smooth_lighting)
         from engine.textures import Texture
         from game.app.texturepacks import get_active_texture_pack, set_active_texture_pack
         previous_pack = get_active_texture_pack()
@@ -103,6 +104,7 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         self._screen_size = None
         self._screen_tick_accum = 0.0
         self._grabbed = False
+        self.hide_gui = False
         self.audio = SoundManager("game/sound", pygame_module=pg)
         self.background_music = BackgroundMusicPlayer(
             Path(__file__).resolve().parents[1] / "music", pygame_module=pg,
@@ -112,8 +114,6 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
             self.user_data_root / "logs" / "performance"
         )
         self.gpu_timer_profiler = GpuTimerQueryProfiler()
-        self._performance_log_status = ""
-        self._performance_log_status_until = 0.0
         self._gc_profile_started = {}
         self._gc_profile_events = deque(maxlen=64)
         self._gc_profile_callback = self._on_gc_profile_event
@@ -168,6 +168,16 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         if new_screen is None and self.world is None:
             new_screen = GuiMainMenu()
         self.current_screen = new_screen
+        if (
+            new_screen is None
+            and self.player is not None
+            and getattr(self.player, "is_player_sleeping", lambda: False)()
+        ):
+            try:
+                from game.gameplay.screens import GuiSleep
+                self.current_screen = GuiSleep()
+            except Exception:
+                pass
         self._screen_tick_accum = 0.0
         if new_screen is not None:
             pg.key.start_text_input()
@@ -301,8 +311,9 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
             save_dir=None,
             snow_covered=bool(welcome.get("snow_covered", False)),
             debug_world=bool(welcome.get("debug_world", False)),
-            accurate_generation=bool(welcome.get("accurate_generation", True)),
+            accurate_generation=bool(welcome.get("accurate_generation", False)),
         )
+        self.world.smooth_lighting_enabled = bool(self.settings.smooth_lighting)
         self.world._ephemeral_multiplayer_world = True
         self.world._multiplayer_client_world = True
         self.world._multiplayer_world = True
@@ -311,6 +322,7 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         self.world.sound_player = self.play_sound
         self.world.record_music_player = self.background_music
         self.player = Player(pos=[x, y, z], gamemode=0, username=self.settings.username)
+        self._bind_player(self.player)
         self.player.yaw = float(welcome.get("yaw", 0.0))
         self.player.pitch = float(welcome.get("pitch", 0.0))
         self.player.sound_player = self.play_sound
@@ -344,9 +356,16 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         from game.block import Block
         was_fancy = Block._fancy_graphics
         Block.set_fancy_graphics(self.settings.fancy_graphics)
+        smooth_lighting = bool(self.settings.smooth_lighting)
+        was_smooth_lighting = getattr(
+            self, "_applied_smooth_lighting", smooth_lighting,
+        )
+        self._applied_smooth_lighting = smooth_lighting
         if self.world is not None:
             self.apply_render_distance()
-            if was_fancy != self.settings.fancy_graphics:
+            self.world.smooth_lighting_enabled = smooth_lighting
+            if (was_fancy != self.settings.fancy_graphics
+                    or was_smooth_lighting != smooth_lighting):
                 for chunk in self.world.chunks.values():
                     if hasattr(chunk, "mark_all_dirty"):
                         chunk.mark_all_dirty()
@@ -358,10 +377,14 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         )
         index = max(0, min(3, int(self.settings.render_distance)))
         w = self.world
+        if w is None:
+            return
         w.view_distance = alpha_render_distance_chunk_radius(index)
         self.renderer.near_clip = 0.05
         self.renderer.far_clip = alpha_render_distance_far_clip(index)
         self.renderer.render_distance_index = index
+        w._active_view_keys = None
+        w._active_view_center = None
 
 
     def draw_loading(self, title, status, progress=0.0):
@@ -437,17 +460,58 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         )
 
 
-    def start_world(self, world_name="World1", *, debug_world=False, accurate_generation=None):
-        self._is_multiplayer_client_world = False
-        if world_name not in {f"World{i}" for i in range(1, 6)}:
-            raise ValueError(f"Invalid world slot {world_name!r}; expected World1..World5")
+    def _convert_world_with_progress(self, save_dir):
         from game.localization import translate
+        from game.world.savegame import convert_world_to_mcregion
+        title = translate("mcpy.loading.convertingWorld")
+        last_draw = [0.0]
+
+        def report(done, total):
+            now = time.monotonic()
+            if 0 < done < total and now - last_draw[0] < 0.05:
+                return
+            last_draw[0] = now
+            try:
+                pg.event.pump()
+            except Exception:
+                pass
+            fraction = (done / total) if total else 1.0
+            status = translate("mcpy.loading.convertingChunks", done, total) if total else ""
+            self.draw_loading(title, status, fraction)
+
+        report(0, 0)
+        return convert_world_to_mcregion(save_dir, report)
+
+    def start_world(
+        self, world_name="World1", *, display_name=None, seed=None,
+        debug_world=False, accurate_generation=None,
+    ):
+        self._is_multiplayer_client_world = False
+        world_name = str(world_name)
+        reserved_devices = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+        device_name = world_name.split(".", 1)[0].rstrip(" .").upper()
+        if (not world_name or world_name in {".", ".."} or "/" in world_name
+                or "\\" in world_name or any(ord(char) < 32 for char in world_name)
+                or any(char in world_name for char in '<>:"|?*')
+                or world_name.endswith((".", " ")) or device_name in reserved_devices):
+            raise ValueError(f"Invalid world folder name: {world_name!r}")
+        save_root = self.save_root.expanduser().resolve()
+        unresolved_save_dir = save_root / world_name
+        if unresolved_save_dir.is_symlink():
+            raise ValueError("World save directory cannot be a symbolic link")
+        save_dir = unresolved_save_dir.resolve()
+        if save_dir.parent != save_root:
+            raise ValueError("World save directory must be directly inside the saves folder")
+        from game.localization import translate
+        from game.world.savegame import world_needs_conversion
+        if save_dir.is_dir() and world_needs_conversion(save_dir):
+            self._convert_world_with_progress(save_dir)
         self.draw_loading(
             translate("mcpy.loading.generatingLevel",),
             translate("mcpy.loading.readingSavedWorld"),
             0.0,
         )
-        save_dir = self.save_root / world_name
+        self.save_root.mkdir(parents=True, exist_ok=True)
         self._active_save_dir = save_dir
         self._active_world_name = world_name
         saved_dimension = self.saved_world_dimension(world_name)
@@ -455,12 +519,19 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
         print(f"Opening world: {dimension_save_dir} (dimension {saved_dimension})")
         self.world = World(
             renderer=self.renderer,
+            seed=seed,
             view_distance=self.settings.render_chunks,
             progress_callback=self._world_loading_progress,
             save_dir=dimension_save_dir,
             debug_world=debug_world,
             accurate_generation=accurate_generation,
             dimension_id=saved_dimension,
+        )
+        self.world.smooth_lighting_enabled = bool(self.settings.smooth_lighting)
+        self.world.level_name = str(
+            display_name
+            or (self.world._loaded_level_data or {}).get("LevelName", "")
+            or world_name.replace("_", " ")
         )
         Entity.world = self.world
         self.world.sound_player = self.play_sound
@@ -500,6 +571,7 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
             float(self.world.spawn_z),
         )
         self.spawn_pos = self._safe_spawn_position(self.spawn_pos)
+        self._bind_player(self.player)
         overworld_spawn_file = save_dir / ".mcpy_overworld_spawn"
         if saved_dimension == 0:
             try:
@@ -892,10 +964,11 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
                 ),
                 save_dir=target_directory,
                 debug_world=False,
-                accurate_generation=getattr(source, "accurate_generation", True),
+                accurate_generation=getattr(source, "accurate_generation", False),
                 dimension_id=destination_dimension,
                 initial_position=(target_x, target_y, target_z),
             )
+            destination.smooth_lighting_enabled = bool(self.settings.smooth_lighting)
             arrival = (
                 (target_x, target_y, target_z) if for_respawn else
                 self._find_or_create_dimension_portal(
@@ -994,7 +1067,18 @@ class Game(GameInputMixin, GamePerformanceMixin, GameLoopMixin):
             force(spawn[0], spawn[2])
         self.display_gui_screen(None)
 
+    def _bind_player(self, player):
+        if player is None:
+            return player
+        player.mc = self
+        player.game = self
+        player.world = self.world
+        player.settings = self.settings
+        player.sound_player = getattr(self, "sound", None)
+        return player
+
     def _safe_spawn_position(self, position, search_radius=8):
+
         from game.app.spawn_safety import safe_spawn_position
         return safe_spawn_position(self.player, self.world, position, search_radius)
 

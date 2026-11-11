@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections import deque
 
-from game.world.chunk_indexing import find_chunk_block_indices
 
 WIRE = "redstone_wire"
 LEVER = "lever"
@@ -10,8 +9,11 @@ BUTTON = "stone_button"
 PLATES = frozenset({"stone_pressure_plate", "wooden_pressure_plate"})
 TORCH_ON = "redstone_torch"
 TORCH_OFF = "unlit_redstone_torch"
+REPEATER_OFF = "redstone_repeater"
+REPEATER_ON = "redstone_repeater_on"
+REPEATERS = frozenset({REPEATER_OFF, REPEATER_ON})
 DOORS = frozenset({"wooden_door", "iron_door"})
-COMPONENTS = frozenset({WIRE, LEVER, BUTTON, *PLATES, TORCH_ON, TORCH_OFF, *DOORS})
+COMPONENTS = frozenset({WIRE, LEVER, BUTTON, *PLATES, TORCH_ON, TORCH_OFF, *REPEATERS, *DOORS})
 TORCHES = frozenset({TORCH_ON, TORCH_OFF})
 
 TORCH_TICK_RATE = 2
@@ -24,6 +26,15 @@ _TORCH_SUPPORT = {
     1: (-1, 0, 0), 2: (1, 0, 0), 3: (0, 0, -1),
     4: (0, 0, 1), 5: (0, -1, 0),
 }
+_REPEATER_OUTPUT = {
+    0: (0, 0, -1), 1: (1, 0, 0),
+    2: (0, 0, 1), 3: (-1, 0, 0),
+}
+_REPEATER_INPUT = {
+    0: (0, 0, 1), 1: (-1, 0, 0),
+    2: (0, 0, -1), 3: (1, 0, 0),
+}
+_REPEATER_DELAY_TICKS = (2, 4, 6, 8)
 
 
 def torch_support_position(world, pos):
@@ -70,6 +81,18 @@ class RedstoneSystem:
 
     def _world_time(self) -> int:
         return int(getattr(self.world, "world_time", 0) or 0)
+
+    def shift_world_time(self, delta):
+        delta = int(delta)
+        if not delta:
+            return 0
+        self.torch_schedule = {
+            pos: due + delta for pos, due in self.torch_schedule.items()
+        }
+        self.torch_updates = [
+            (x, y, z, tick + delta) for x, y, z, tick in self.torch_updates
+        ]
+        return len(self.torch_schedule)
 
     def _schedule_torch(self, pos):
         pos = (int(pos[0]), int(pos[1]), int(pos[2]))
@@ -167,6 +190,7 @@ class RedstoneSystem:
         }
 
     def on_chunk_loaded(self, chunk):
+        from game.world.chunk_indexing import find_chunk_block_indices
         min_x, max_x = int(chunk.start_x), int(chunk.start_x + chunk.width)
         min_z, max_z = int(chunk.start_z), int(chunk.start_z + chunk.depth)
         old_count = len(self.components)
@@ -256,6 +280,89 @@ class RedstoneSystem:
 
     toggle_button = press_button
 
+    def repeater_delay_ticks(self, meta):
+        return _REPEATER_DELAY_TICKS[(int(meta) >> 2) & 3]
+
+    def cycle_repeater_delay(self, x, y, z):
+        world = self.world
+        block_type = world.get_block_type(x, y, z)
+        if block_type not in REPEATERS:
+            return False
+        meta = int(world.get_metadata(x, y, z)) & 15
+        delay = (((meta >> 2) + 1) & 3) << 2
+        world.set_block(
+            x, y, z, block_type, meta=(meta & 3) | delay,
+            immediate_mesh=True,
+        )
+        self.dirty = True
+        return True
+
+    def _repeater_input_powered(self, pos, meta, wire_power):
+        dx, dy, dz = _REPEATER_INPUT[int(meta) & 3]
+        input_pos = (int(pos[0]) + dx, int(pos[1]) + dy, int(pos[2]) + dz)
+        input_type = self.world.get_block_type(*input_pos)
+        if input_type == WIRE:
+            level = wire_power.get(input_pos, self.world.get_metadata(*input_pos))
+            return int(level) > 0
+
+        if self._source_can_power_wire(input_pos, tuple(int(v) for v in pos)):
+            return True
+
+        if self._is_full_cube(*input_pos):
+            return self._block_receives_power(
+                input_pos, wire_power, ignore_source=tuple(int(v) for v in pos),
+            )
+        return False
+
+    def on_repeater_placed(self, x, y, z):
+        pos = (int(x), int(y), int(z))
+        world = self.world
+        if world.get_block_type(*pos) != REPEATER_OFF:
+            return False
+        wire_positions = {
+            p for p, typ in self.components.items()
+            if typ == WIRE and world.get_block_type(*p) == WIRE
+        }
+        wire_power = self._solve_wire_power(wire_positions)
+        meta = int(world.get_metadata(*pos)) & 15
+        if not self._repeater_input_powered(pos, meta, wire_power):
+            return False
+        schedule = getattr(world, "schedule_block_update", None)
+        if not callable(schedule):
+            return False
+        return bool(schedule(*pos, REPEATER_OFF, 1))
+
+    def apply_repeater_update(self, x, y, z):
+        pos = (int(x), int(y), int(z))
+        world = self.world
+        current = world.get_block_type(*pos)
+        if current not in REPEATERS:
+            return False
+        meta = int(world.get_metadata(*pos)) & 15
+        wire_positions = {
+            p for p, typ in self.components.items()
+            if typ == WIRE and world.get_block_type(*p) == WIRE
+        }
+        wire_power = self._solve_wire_power(wire_positions)
+        input_powered = self._repeater_input_powered(pos, meta, wire_power)
+        delay = self.repeater_delay_ticks(meta)
+        changed = False
+        if current == REPEATER_OFF:
+            world.set_block(*pos, REPEATER_ON, meta=meta, immediate_mesh=True)
+            changed = True
+            if not input_powered:
+                schedule = getattr(world, "schedule_block_update", None)
+                if callable(schedule):
+                    schedule(*pos, REPEATER_ON, delay)
+        elif not input_powered:
+            world.set_block(*pos, REPEATER_OFF, meta=meta, immediate_mesh=True)
+            changed = True
+        if changed:
+            self.dirty = True
+            if not self._updating:
+                self.recompute()
+        return changed
+
     def schedule_button_release(self, x, y, z, ticks=20):
         pos = (int(x), int(y), int(z))
         if self.world.get_block_type(*pos) != BUTTON:
@@ -340,7 +447,7 @@ class RedstoneSystem:
             return bool(int(world.get_metadata(x, y, z)) & 8)
         if block_type in PLATES:
             return bool(int(world.get_metadata(x, y, z)) & 1)
-        return block_type == TORCH_ON
+        return block_type in (TORCH_ON, REPEATER_ON)
 
     def _is_full_cube(self, x, y, z):
         if y < 0:
@@ -379,12 +486,16 @@ class RedstoneSystem:
     def _source_can_power_wire(self, source_pos, wire_pos):
         world = self.world
         stype = world.get_block_type(*source_pos)
-        if stype not in (LEVER, BUTTON, TORCH_ON, *PLATES):
+        if stype not in (LEVER, BUTTON, TORCH_ON, *PLATES, REPEATER_ON):
             return False
         if not self._is_source_active(source_pos, stype):
             return False
         if stype == TORCH_ON:
             return torch_powers_position(world, source_pos, wire_pos)
+        if stype == REPEATER_ON:
+            meta = int(world.get_metadata(*source_pos)) & 3
+            dx, dy, dz = _REPEATER_OUTPUT[meta]
+            return (source_pos[0] + dx, source_pos[1] + dy, source_pos[2] + dz) == tuple(wire_pos)
         return True
 
     def _initial_wire_power(self, wire_pos):
@@ -428,10 +539,9 @@ class RedstoneSystem:
             if source_pos == ignore_source:
                 continue
             stype = world.get_block_type(*source_pos)
-            if stype in (LEVER, BUTTON, *PLATES, TORCH_ON) and self._is_source_active(source_pos, stype):
-                if stype == TORCH_ON and not torch_powers_position(world, source_pos, pos):
-                    continue
-                return True
+            if stype in (LEVER, BUTTON, *PLATES, TORCH_ON, REPEATER_ON):
+                if self._source_can_power_wire(source_pos, pos):
+                    return True
             if stype == WIRE and wire_power.get(source_pos, 0) > 0:
                 return True
         return False
@@ -550,6 +660,18 @@ class RedstoneSystem:
                     if self._set_wire_power_meta(pos, level):
                         changed = True
 
+                schedule = getattr(world, "schedule_block_update", None)
+                if callable(schedule):
+                    for pos, tracked_type in list(self.components.items()):
+                        current_type = world.get_block_type(*pos)
+                        if current_type not in REPEATERS:
+                            continue
+                        meta = int(world.get_metadata(*pos)) & 15
+                        input_powered = self._repeater_input_powered(pos, meta, wire_power)
+                        if ((current_type == REPEATER_OFF and input_powered)
+                                or (current_type == REPEATER_ON and not input_powered)):
+                            schedule(*pos, current_type, self.repeater_delay_ticks(meta))
+
                 for pos, tracked_type in list(self.components.items()):
                     if tracked_type not in TORCHES:
                         continue
@@ -613,7 +735,7 @@ class RedstoneSystem:
             return
         seen = set()
         for pos, typ in list(self.components.items()):
-            if typ not in (WIRE, LEVER, BUTTON, TORCH_ON, TORCH_OFF, *PLATES):
+            if typ not in (WIRE, LEVER, BUTTON, TORCH_ON, TORCH_OFF, *PLATES, *REPEATERS):
                 continue
             key = (pos[0] >> 2, pos[2] >> 2)  
             if key in seen:

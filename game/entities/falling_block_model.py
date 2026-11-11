@@ -42,6 +42,10 @@ class FallingBlockRendererMixin:
         if not defn or texture is None:
             return
         faces = defn.get("faces", 0)
+        bounds = defn.get("bounds") or (0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+        height = max(0.0, min(1.0, float(bounds[4]) - float(bounds[1])))
+        if defn.get("model") != "snow_layer":
+            height = 1.0
 
         def tile(slot):
             index = faces[slot] if isinstance(faces, list) else faces
@@ -89,7 +93,12 @@ class FallingBlockRendererMixin:
                 glColor3f(level, level, level)
                 t = BLOCK_ATLAS_TILE
                 uvs = ((u, v + t), (u, v), (u + t, v), (u + t, v + t))
+                is_side = slot not in (0, 1)
                 for (px, py, pz), (tu, tv) in zip(corners, uvs):
+                    if height < 1.0:
+                        py = -0.5 + (py + 0.5) * height
+                        if is_side:
+                            tv = v + t * (py + 0.5)
                     glTexCoord2f(tu, tv)
                     glVertex3f(px, py, pz)
             glEnd()

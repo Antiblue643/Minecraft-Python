@@ -33,6 +33,7 @@ class ClientConn:
         "inventory_state", "inventory_initialized", "inventory_revision", "last_inventory_tx",
         "break_target", "break_progress", "player_state",
         "respawn_pending", "event_window_start", "event_window_count", "last_profile_event",
+        "denied_bed_key",
     )
 
     def __init__(self, sock: socket.socket, addr):
@@ -58,6 +59,7 @@ class ClientConn:
         self.event_window_start = time.monotonic()
         self.event_window_count = 0
         self.last_profile_event = 0.0
+        self.denied_bed_key = None
 
     def send_bytes(self, data: bytes) -> None:
         if not self.alive:
@@ -111,7 +113,7 @@ class MultiplayerServer:
         on_log: Optional[Callable[[str], None]] = None,
         snow_covered: bool = False,
         world_time: int = 0,
-        accurate_generation: bool = True,
+        accurate_generation: bool = False,
         debug_world: bool = False,
         banned_names=None,
         operator_names=None,
@@ -169,6 +171,7 @@ class MultiplayerServer:
         self.host_yaw = 0.0
         self.host_pitch = 0.0
         self.host_player_state = P.normalize_player_effect_state({})
+        self._bed_claims: dict[tuple[int, int, int], int] = {}
 
     @property
     def bound_port(self) -> int:
@@ -236,6 +239,7 @@ class MultiplayerServer:
         with self._lock:
             clients = list(self._clients.values())
             self._clients.clear()
+            self._bed_claims.clear()
         for client in clients:
             client.alive = False
             try:
@@ -255,9 +259,141 @@ class MultiplayerServer:
     ) -> None:
         values = tuple(_number(v) for v in (x, y, z, yaw, pitch))
         normalized_state = P.normalize_player_effect_state(state or {})
+        updates = []
         with self._lock:
+            normalized_state, updates, _denied = self._reconcile_bed_claim_locked(
+                self.host_id, normalized_state,
+            )
             self.host_x, self.host_y, self.host_z, self.host_yaw, self.host_pitch = values
             self.host_player_state = normalized_state
+        self._publish_bed_occupancy_updates(updates)
+
+    def set_client_state(
+        self, player_id: int, x: float, y: float, z: float,
+        yaw: float, pitch: float, state=None,
+    ) -> bool:
+        values = tuple(_number(v) for v in (x, y, z, yaw, pitch))
+        if max(abs(values[0]), abs(values[1]), abs(values[2])) > _MAX_COORD:
+            return False
+        normalized_state = P.normalize_player_effect_state(state or {})
+        updates = []
+        with self._lock:
+            client = next((
+                peer for peer in self._clients.values()
+                if peer.player_id == int(player_id) and peer.alive
+            ), None)
+            if client is None:
+                return False
+            normalized_state, updates, _denied = self._reconcile_bed_claim_locked(
+                client.player_id, normalized_state, client=client,
+            )
+            client.x, client.y, client.z, client.yaw, client.pitch = values
+            client.player_state = normalized_state
+        self._publish_bed_occupancy_updates(updates)
+        return True
+
+    @staticmethod
+    def _bed_key_from_state(state) -> tuple[int, int, int] | None:
+        if not isinstance(state, dict) or not bool(state.get("sleeping", False)):
+            return None
+        bed = state.get("bed_location")
+        if not isinstance(bed, (list, tuple)) or len(bed) != 3:
+            return None
+        try:
+            x, y, z = (int(value) for value in bed)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not (-30_000_000 <= x <= 30_000_000 and 0 <= y < 256
+                and -30_000_000 <= z <= 30_000_000):
+            return None
+        return x, y, z
+
+    def _reconcile_bed_claim_locked(self, player_id, state, *, client=None):
+        pid = int(player_id)
+        updates = []
+        old_key = next((key for key, owner in self._bed_claims.items() if owner == pid), None)
+        new_key = self._bed_key_from_state(state)
+
+        if old_key is not None and old_key != new_key:
+            self._bed_claims.pop(old_key, None)
+            updates.append((old_key, False, pid))
+
+        denied = None
+        if new_key is not None:
+            owner = self._bed_claims.get(new_key)
+            if owner is not None and owner != pid:
+                denied = new_key
+                state = dict(state)
+                state.update({
+                    "sleeping": False, "sleep_timer": 0,
+                    "bed_location": None, "bed_meta": 0,
+                })
+            elif owner is None:
+                self._bed_claims[new_key] = pid
+                updates.append((new_key, True, pid))
+
+        if client is not None:
+            if denied is not None:
+                client.denied_bed_key = denied
+            elif new_key is None:
+                client.denied_bed_key = None
+            elif self._bed_claims.get(new_key) == pid:
+                client.denied_bed_key = None
+        return state, updates, denied
+
+    @staticmethod
+    def _bed_occupancy_packet(key, occupied, player_id):
+        return {
+            "t": "bed_occupancy", "x": int(key[0]), "y": int(key[1]),
+            "z": int(key[2]), "occupied": bool(occupied),
+            "player_id": int(player_id),
+        }
+
+    def _publish_bed_occupancy_updates(self, updates) -> None:
+        for key, occupied, player_id in updates or ():
+            packet = self._bed_occupancy_packet(key, occupied, player_id)
+            self._broadcast(packet)
+            self._push(packet)
+
+    def claim_bed(self, player_id: int, bed_location) -> bool:
+        try:
+            key = tuple(int(value) for value in bed_location)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if len(key) != 3 or not (
+            -30_000_000 <= key[0] <= 30_000_000 and 0 <= key[1] < 256
+            and -30_000_000 <= key[2] <= 30_000_000
+        ):
+            return False
+        pid = int(player_id)
+        changed = False
+        with self._lock:
+            owner = self._bed_claims.get(key)
+            if owner is not None and owner != pid:
+                return False
+            if owner is None:
+                self._bed_claims[key] = pid
+                changed = True
+        if changed:
+            self._publish_bed_occupancy_updates(((key, True, pid),))
+        return True
+
+    def release_bed(self, player_id: int, bed_location=None) -> bool:
+        pid = int(player_id)
+        wanted = None
+        if bed_location is not None:
+            try:
+                wanted = tuple(int(value) for value in bed_location)
+            except (TypeError, ValueError, OverflowError):
+                wanted = None
+        updates = []
+        with self._lock:
+            for key, owner in list(self._bed_claims.items()):
+                if owner == pid and (wanted is None or wanted == key):
+                    del self._bed_claims[key]
+                    updates.append((key, False, pid))
+        self._publish_bed_occupancy_updates(updates)
+        return bool(updates)
 
     def set_world_metadata(self, world_time: int, snow_covered: bool) -> None:
         with self._lock:
@@ -702,6 +838,9 @@ class MultiplayerServer:
                         break_state={"target": self.host_break_target, "progress": self.host_break_progress},
                         state=self.host_player_state,
                     ))
+                occupied_beds = [list(key) for key in self._bed_claims]
+                world_time_snapshot = self.world_time
+                snow_covered_snapshot = self.snow_covered
                 others.extend(
                     P.player_snapshot(
                         c.player_id, c.name, c.x, c.y, c.z, c.yaw, c.pitch,
@@ -716,12 +855,13 @@ class MultiplayerServer:
             client.send(P.welcome(
                 pid, self.seed, client.x, client.y, client.z,
                 yaw=client.yaw, pitch=client.pitch, players=others,
-                snow_covered=self.snow_covered, world_time=self.world_time,
+                snow_covered=snow_covered_snapshot, world_time=world_time_snapshot,
                 operator=str(name).strip().casefold() in self.operator_names,
                 inventory_state=client.inventory_state,
                 inventory_revision=client.inventory_revision,
                 accurate_generation=self.accurate_generation,
                 debug_world=self.debug_world,
+                occupied_beds=occupied_beds,
             ))
             self._broadcast(P.join(
                 pid, name, client.x, client.y, client.z,
@@ -753,7 +893,16 @@ class MultiplayerServer:
                 return
             player_state = P.normalize_player_effect_state(msg)
             profile_event = None
+            bed_updates = []
+            bed_denied = None
+            bed_denial_already_sent = False
             with self._lock:
+                previous_denied = client.denied_bed_key
+                player_state, bed_updates, bed_denied = self._reconcile_bed_claim_locked(
+                    client.player_id, player_state, client=client,
+                )
+                if bed_denied is not None:
+                    bed_denial_already_sent = previous_denied == bed_denied
                 client.x, client.y, client.z = x, y, z
                 client.yaw, client.pitch = yaw, max(-90.0, min(90.0, pitch))
                 client.player_state = player_state
@@ -767,6 +916,12 @@ class MultiplayerServer:
                         "x": client.x, "y": client.y, "z": client.z,
                         "yaw": client.yaw, "pitch": client.pitch,
                     }
+            self._publish_bed_occupancy_updates(bed_updates)
+            if bed_denied is not None and not bed_denial_already_sent:
+                client.send({
+                    "t": "bed_claim_result", "granted": False,
+                    "bed_location": list(bed_denied),
+                })
             if profile_event is not None:
                 self._push(profile_event)
         elif msg_type == "chat":
@@ -840,7 +995,7 @@ class MultiplayerServer:
                 return
             if msg_type == "entity_interact":
                 action = str(msg.get("action") or "")
-                if action not in {"furnace_fuel", "milk_cow", "milk_squid", "dye_sheep"}:
+                if action not in {"furnace_fuel", "milk_cow", "dye_sheep"}:
                     return
                 limit = 20
                 packet_type = "entity_interact_request"
@@ -1268,11 +1423,16 @@ class MultiplayerServer:
             ]
 
     def _drop(self, client: ClientConn) -> None:
+        bed_updates = []
         with self._lock:
             for key, value in list(self._clients.items()):
                 if value is client:
                     del self._clients[key]
                     break
+            for key, owner in list(self._bed_claims.items()):
+                if owner == int(client.player_id):
+                    del self._bed_claims[key]
+                    bed_updates.append((key, False, int(client.player_id)))
         try:
             client.sock.shutdown(socket.SHUT_RDWR)
         except OSError:
@@ -1282,6 +1442,7 @@ class MultiplayerServer:
         except OSError:
             pass
         client.alive = False
+        self._publish_bed_occupancy_updates(bed_updates)
         if client.player_id > 0:
             self._push({
                 "t": "profile_update", "name": client.name,

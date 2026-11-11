@@ -15,6 +15,7 @@ from game.block import Block
 
 _SHADOW_TEX = None
 _SHADOW_PATH = "game/textures/shadow.png"
+_NORMAL_CUBE_CACHE = {}
 
 SHADOW_SIZE_LIVING = 0.5
 SHADOW_SIZE_ITEM = 0.15
@@ -30,16 +31,22 @@ def _shadow_texture():
 def _is_normal_cube(block_type):
     if not block_type:
         return False
+    cached = _NORMAL_CUBE_CACHE.get(block_type)
+    if cached is not None:
+        return cached
     Block._load_defs()
     definition = Block._block_defs.get(block_type) or {}
+    result = True
     if definition.get("model", "cube") != "cube":
-        return False
-    if definition.get("transparent"):
-        return False
-    n_cull = definition.get("nCull", "all")
-    if n_cull in ("none", "liquid"):
-        return False
-    return True
+        result = False
+    elif definition.get("transparent"):
+        result = False
+    else:
+        n_cull = definition.get("nCull", "all")
+        if n_cull in ("none", "liquid"):
+            result = False
+    _NORMAL_CUBE_CACHE[block_type] = result
+    return result
 
 
 def render_entity_shadow(world, entity_x, entity_y, entity_z, shadow_size,
@@ -48,6 +55,18 @@ def render_entity_shadow(world, entity_x, entity_y, entity_z, shadow_size,
         return
     if not getattr(Block, "_fancy_graphics", True):
         return
+
+    try:
+        from game.entities.entity import Entity
+        cam = getattr(Entity, "_entity_shadow_camera", None)
+        if cam is not None:
+            cdx = entity_x - float(cam[0])
+            cdy = entity_y - float(cam[1])
+            cdz = entity_z - float(cam[2])
+            if cdx * cdx + cdy * cdy + cdz * cdz > 48.0 * 48.0:
+                return
+    except Exception:
+        pass
 
     rndr = renderer or getattr(world, "renderer", None)
     if rndr is None or not hasattr(rndr, "camera_relative_offset"):
@@ -60,7 +79,7 @@ def render_entity_shadow(world, entity_x, entity_y, entity_z, shadow_size,
     radius = float(shadow_size)
     min_x = int(math.floor(entity_x - radius + 0.5))
     max_x = int(math.floor(entity_x + radius + 0.5))
-    min_sy = int(math.floor(entity_y - radius - 0.5))
+    min_sy = int(math.floor(entity_y - 2.5 + 0.5))
     max_sy = int(math.floor(entity_y + 0.5 - 0.001))
     min_z = int(math.floor(entity_z - radius + 0.5))
     max_z = int(math.floor(entity_z + radius + 0.5))

@@ -44,8 +44,7 @@ def _is_opaque_normal_cube(block_type: str | None) -> bool:
     return (
         definition.get("model", "cube") == "cube"
         and definition.get("nCull", "all") == "all"
-        and definition.get("collision", not definition.get("intangible", False)) is not False
-        and not definition.get("intangible", False)
+        and definition.get("collision", True) is not False
         and not definition.get("transparent", False)
     )
 

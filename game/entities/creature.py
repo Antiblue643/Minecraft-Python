@@ -14,12 +14,14 @@ def port_yaw_towards(dx: float, dz: float) -> float:
 class Creature(Mob):
     ai_frozen = False
     PATH_SEARCH_DISTANCE = 16.0
+    PATH_RETRY_COOLDOWN_TICKS = 8
 
     def __init__(self, pos, *, yaw=None, rng=None):
         super().__init__(pos, yaw=yaw, rng=rng)
         self.player_to_attack = None
         self.path_to_entity = None
         self.has_attacked = False
+        self._path_retry_cooldown = 0
 
     @property
     def target(self):
@@ -163,11 +165,18 @@ class Creature(Mob):
         return self.get_block_path_weight(cx, cy, cz) >= 0.0
 
     def _path_to_target(self):
-        return get_path_to_entity(
+        if self._path_retry_cooldown > 0:
+            return self.path_to_entity
+        path = get_path_to_entity(
             Entity.world, self, self.player_to_attack, self.PATH_SEARCH_DISTANCE,
         )
+        if path is None:
+            self._path_retry_cooldown = self.PATH_RETRY_COOLDOWN_TICKS
+        return path
 
     def _choose_wander_path(self) -> None:
+        if self._path_retry_cooldown > 0:
+            return
         found = False
         best_x = best_y = best_z = -1
         best_weight = -99999.0
@@ -181,15 +190,20 @@ class Creature(Mob):
                 best_x, best_y, best_z = cx, cy, cz
                 found = True
         if found:
-            self.path_to_entity = get_path_to_xyz(
+            path = get_path_to_xyz(
                 Entity.world, self, best_x, best_y, best_z, 10.0,
             )
+            self.path_to_entity = path
+            if path is None:
+                self._path_retry_cooldown = self.PATH_RETRY_COOLDOWN_TICKS
 
     def _wrap_yaw_delta(self, delta: float) -> float:
         return (float(delta) + 180.0) % 360.0 - 180.0
 
     def _update_player_action_state(self) -> None:
         self.has_attacked = False
+        if self._path_retry_cooldown > 0:
+            self._path_retry_cooldown -= 1
         if self.player_to_attack is None:
             self.player_to_attack = self.find_player_to_attack()
             if self.player_to_attack is not None:

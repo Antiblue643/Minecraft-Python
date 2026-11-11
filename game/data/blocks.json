@@ -10,7 +10,6 @@
         3
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "shovel",
@@ -36,7 +35,6 @@
     "dirt": {
       "faces": 2,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "shovel",
@@ -62,7 +60,6 @@
     "stone": {
       "faces": 1,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -88,7 +85,6 @@
     "cobblestone": {
       "faces": 16,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -114,7 +110,6 @@
     "planks": {
       "faces": 4,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "axe",
@@ -140,7 +135,6 @@
     "stairs": {
       "faces": 4,
       "nCull": "all",
-      "intangible": false,
       "model": "stairs",
       "compass": "none",
       "tool": "axe",
@@ -168,7 +162,6 @@
     "cobblestone_stairs": {
       "faces": 16,
       "nCull": "all",
-      "intangible": false,
       "model": "stairs",
       "compass": "none",
       "tool": "pickaxe",
@@ -196,7 +189,6 @@
     "sapling": {
       "faces": 15,
       "nCull": "none",
-      "intangible": true,
       "model": "cross",
       "compass": "none",
       "tool": "none",
@@ -229,7 +221,6 @@
         70
       ],
       "nCull": "none",
-      "intangible": false,
       "model": "cactus",
       "compass": "none",
       "tool": "none",
@@ -269,7 +260,6 @@
     "bedrock": {
       "faces": 17,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -295,7 +285,6 @@
     "water": {
       "faces": 205,
       "nCull": "liquid",
-      "intangible": true,
       "transparent": true,
       "model": "liquid",
       "compass": "none",
@@ -322,7 +311,6 @@
     "lava": {
       "faces": 237,
       "nCull": "liquid",
-      "intangible": true,
       "transparent": true,
       "model": "liquid",
       "compass": "none",
@@ -349,7 +337,6 @@
     "sand": {
       "faces": 18,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "shovel",
@@ -375,7 +362,6 @@
     "gravel": {
       "faces": 19,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "shovel",
@@ -401,7 +387,6 @@
     "gold_ore": {
       "faces": 32,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -427,7 +412,6 @@
     "iron_ore": {
       "faces": 33,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -453,7 +437,6 @@
     "coal_ore": {
       "faces": 34,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -486,7 +469,6 @@
         20
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "xy",
       "tool": "axe",
@@ -531,7 +513,6 @@
     "leaves": {
       "faces": 52,
       "nCull": "none",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "sword",
@@ -562,7 +543,6 @@
     "sponge": {
       "faces": 48,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -588,7 +568,6 @@
     "glass": {
       "faces": 49,
       "nCull": "type",
-      "intangible": false,
       "transparent": true,
       "model": "cube",
       "compass": "none",
@@ -616,7 +595,6 @@
     "wool": {
       "faces": 64,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "shears",
@@ -660,7 +638,6 @@
     "yellow_flower": {
       "faces": 13,
       "nCull": "none",
-      "intangible": true,
       "model": "cross",
       "compass": "none",
       "tool": "none",
@@ -686,7 +663,6 @@
     "red_flower": {
       "faces": 12,
       "nCull": "none",
-      "intangible": true,
       "model": "cross",
       "compass": "none",
       "tool": "none",
@@ -712,7 +688,6 @@
     "brown_mushroom": {
       "faces": 29,
       "nCull": "none",
-      "intangible": true,
       "model": "cross",
       "compass": "none",
       "tool": "none",
@@ -738,7 +713,6 @@
     "red_mushroom": {
       "faces": 28,
       "nCull": "none",
-      "intangible": true,
       "model": "cross",
       "compass": "none",
       "tool": "none",
@@ -764,7 +738,6 @@
     "gold_block": {
       "faces": 23,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -790,7 +763,6 @@
     "iron_block": {
       "faces": 22,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -823,7 +795,6 @@
         5
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -844,7 +815,34 @@
       ],
       "collision": true,
       "id": 43,
-      "javaName": "stoneSlab"
+      "javaName": "stoneSlab",
+      "subtypes": true,
+      "metaFaces": {
+        "1": [
+          192,
+          192,
+          208,
+          176,
+          192,
+          192
+        ],
+        "2": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "3": [
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ]
+      }
     },
     "stone_slab": {
       "faces": [
@@ -856,7 +854,6 @@
         5
       ],
       "nCull": "type",
-      "intangible": false,
       "model": "slab",
       "compass": "none",
       "tool": "pickaxe",
@@ -877,12 +874,38 @@
       ],
       "collision": true,
       "id": 44,
-      "javaName": "stoneSlab"
+      "javaName": "stoneSlab",
+      "subtypes": true,
+      "metaFaces": {
+        "1": [
+          192,
+          192,
+          208,
+          176,
+          192,
+          192
+        ],
+        "2": [
+          4,
+          4,
+          4,
+          4,
+          4,
+          4
+        ],
+        "3": [
+          16,
+          16,
+          16,
+          16,
+          16,
+          16
+        ]
+      }
     },
     "bricks": {
       "faces": 7,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -916,7 +939,6 @@
         8
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -949,7 +971,6 @@
         35
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "axe",
@@ -975,7 +996,6 @@
     "mossy_cobblestone": {
       "faces": 36,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -1001,7 +1021,6 @@
     "obsidian": {
       "faces": 37,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -1029,7 +1048,6 @@
       "faces": 14,
       "particleTexture": 14,
       "nCull": "none",
-      "intangible": true,
       "transparent": true,
       "model": "portal",
       "compass": "none",
@@ -1058,7 +1076,6 @@
     "torch": {
       "faces": 80,
       "nCull": "none",
-      "intangible": true,
       "model": "torch",
       "compass": "none",
       "tool": "none",
@@ -1084,7 +1101,6 @@
     "fire": {
       "faces": 31,
       "nCull": "none",
-      "intangible": true,
       "transparent": false,
       "model": "fire",
       "compass": "none",
@@ -1111,7 +1127,6 @@
     "mob_spawner": {
       "faces": 65,
       "nCull": "type",
-      "intangible": false,
       "transparent": true,
       "cutoutCullBackfaces": true,
       "model": "cube",
@@ -1140,7 +1155,6 @@
     "diamond_ore": {
       "faces": 50,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -1166,7 +1180,6 @@
     "diamond_block": {
       "faces": 24,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -1199,7 +1212,6 @@
         60
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "axe",
@@ -1226,7 +1238,6 @@
     "crops": {
       "faces": 88,
       "nCull": "none",
-      "intangible": true,
       "model": "crops",
       "compass": "none",
       "tool": "none",
@@ -1259,7 +1270,6 @@
         2
       ],
       "nCull": "type",
-      "intangible": false,
       "model": "farmland",
       "compass": "none",
       "tool": "shovel",
@@ -1300,7 +1310,6 @@
         45
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "y",
       "tool": "pickaxe",
@@ -1334,7 +1343,6 @@
         45
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "y",
       "tool": "pickaxe",
@@ -1368,7 +1376,6 @@
         26
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "y",
       "tool": "axe",
@@ -1394,7 +1401,6 @@
     "ladder": {
       "faces": 83,
       "nCull": "none",
-      "intangible": true,
       "model": "ladder",
       "compass": "y",
       "tool": "axe",
@@ -1421,7 +1427,6 @@
     "rail": {
       "faces": 128,
       "nCull": "none",
-      "intangible": true,
       "model": "rail",
       "compass": "none",
       "tool": "pickaxe",
@@ -1448,7 +1453,6 @@
     "wooden_door": {
       "faces": 97,
       "nCull": "none",
-      "intangible": false,
       "model": "door",
       "compass": "none",
       "tool": "axe",
@@ -1483,7 +1487,6 @@
     "sign": {
       "faces": 4,
       "nCull": "none",
-      "intangible": false,
       "model": "sign",
       "compass": "none",
       "tool": "axe",
@@ -1510,7 +1513,6 @@
     "wall_sign": {
       "faces": 4,
       "nCull": "none",
-      "intangible": false,
       "model": "sign",
       "compass": "none",
       "tool": "axe",
@@ -1537,7 +1539,6 @@
     "redstone_ore": {
       "faces": 51,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -1564,7 +1565,6 @@
     "redstone_ore_lit": {
       "faces": 51,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -1589,9 +1589,8 @@
       "javaName": "oreRedstone"
     },
     "redstone_wire": {
-      "faces": 84,
+      "faces": 164,
       "nCull": "none",
-      "intangible": true,
       "transparent": true,
       "model": "redstone_wire",
       "material": "circuits",
@@ -1615,13 +1614,12 @@
       "collision": false,
       "id": 55,
       "player_breakable": true,
-      "particleTexture": 84,
+      "particleTexture": 164,
       "javaName": "redstoneDust"
     },
     "lever": {
       "faces": 96,
       "nCull": "none",
-      "intangible": true,
       "model": "lever",
       "compass": "none",
       "tool": "none",
@@ -1655,7 +1653,6 @@
     "stone_pressure_plate": {
       "faces": 1,
       "nCull": "none",
-      "intangible": true,
       "model": "pressure_plate",
       "compass": "none",
       "tool": "pickaxe",
@@ -1689,7 +1686,6 @@
     "iron_door": {
       "faces": 98,
       "nCull": "none",
-      "intangible": false,
       "model": "door",
       "compass": "none",
       "tool": "pickaxe",
@@ -1724,7 +1720,6 @@
     "wooden_pressure_plate": {
       "faces": 4,
       "nCull": "none",
-      "intangible": true,
       "model": "pressure_plate",
       "compass": "none",
       "tool": "axe",
@@ -1758,7 +1753,6 @@
     "unlit_redstone_torch": {
       "faces": 115,
       "nCull": "none",
-      "intangible": true,
       "model": "torch",
       "compass": "none",
       "tool": "none",
@@ -1787,7 +1781,6 @@
     "redstone_torch": {
       "faces": 99,
       "nCull": "none",
-      "intangible": true,
       "model": "torch",
       "compass": "none",
       "tool": "none",
@@ -1821,7 +1814,6 @@
     "stone_button": {
       "faces": 1,
       "nCull": "none",
-      "intangible": true,
       "model": "button",
       "compass": "none",
       "tool": "none",
@@ -1855,7 +1847,6 @@
     "snow": {
       "faces": 66,
       "nCull": "type",
-      "intangible": false,
       "model": "snow_layer",
       "compass": "none",
       "tool": "shovel",
@@ -1884,7 +1875,6 @@
     "snow_block": {
       "faces": 66,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "shovel",
@@ -1912,7 +1902,6 @@
     "ice": {
       "faces": 67,
       "nCull": "type",
-      "intangible": false,
       "transparent": true,
       "model": "cube",
       "compass": "none",
@@ -1942,7 +1931,6 @@
     "clay_block": {
       "faces": 72,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "shovel",
@@ -1973,7 +1961,6 @@
     "reed": {
       "faces": 73,
       "nCull": "none",
-      "intangible": true,
       "model": "cross",
       "compass": "none",
       "tool": "none",
@@ -2007,7 +1994,6 @@
         74
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "axe",
@@ -2039,7 +2025,6 @@
     "fence": {
       "faces": 4,
       "nCull": "none",
-      "intangible": false,
       "model": "fence",
       "compass": "none",
       "tool": "axe",
@@ -2081,7 +2066,6 @@
         118
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -2108,7 +2092,6 @@
     "netherrack": {
       "faces": 103,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -2135,7 +2118,6 @@
     "soul_sand": {
       "faces": 104,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -2169,7 +2151,6 @@
     "glowstone": {
       "faces": 105,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -2203,7 +2184,6 @@
         118
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -2230,7 +2210,6 @@
     "lapis_ore": {
       "faces": 160,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -2257,7 +2236,6 @@
     "lapis_block": {
       "faces": 144,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -2284,7 +2262,6 @@
     "note_block": {
       "faces": 74,
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "axe",
@@ -2323,7 +2300,6 @@
         192
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "pickaxe",
@@ -2363,7 +2339,6 @@
         45
       ],
       "nCull": "all",
-      "intangible": false,
       "model": "cube",
       "compass": "y",
       "tool": "pickaxe",
@@ -2403,7 +2378,6 @@
         122
       ],
       "nCull": "none",
-      "intangible": false,
       "model": "cube",
       "compass": "none",
       "tool": "none",
@@ -2426,6 +2400,122 @@
       "material": "cloth",
       "id": 92,
       "javaName": "cake"
+    },
+    "redstone_repeater_on": {
+      "nCull": "none",
+      "model": "redstone_repeater",
+      "material": "circuits",
+      "tool": "none",
+      "minLevel": "none",
+      "hardness": 0.0,
+      "resistance": 0.0,
+      "lightOpacity": 0,
+      "encourageFire": 0,
+      "catchFire": 0,
+      "bounds": [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.125,
+        1.0
+      ],
+      "collision": true,
+      "partial": true,
+      "javaName": "diode",
+      "faces": [
+        5,
+        5,
+        99,
+        147,
+        5,
+        5
+      ],
+      "id": 94,
+      "lightValue": 9,
+      "player_breakable": true,
+      "particleTexture": 5
+    },
+    "redstone_repeater": {
+      "nCull": "none",
+      "model": "redstone_repeater",
+      "material": "circuits",
+      "tool": "none",
+      "minLevel": "none",
+      "hardness": 0.0,
+      "resistance": 0.0,
+      "lightOpacity": 0,
+      "encourageFire": 0,
+      "catchFire": 0,
+      "bounds": [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.125,
+        1.0
+      ],
+      "collision": true,
+      "partial": true,
+      "javaName": "diode",
+      "faces": [
+        5,
+        5,
+        115,
+        131,
+        5,
+        5
+      ],
+      "id": 93,
+      "lightValue": 0,
+      "player_breakable": true,
+      "particleTexture": 5,
+      "blockitem": {
+        "type": "block_item",
+        "stack": 64,
+        "id": 356,
+        "texture": 86
+      }
+    },
+    "bed": {
+      "partial": true,
+      "faces": [
+        134,
+        134,
+        135,
+        152,
+        134,
+        134
+      ],
+      "nCull": "none",
+      "model": "cube",
+      "compass": "none",
+      "tool": "none",
+      "minLevel": "none",
+      "hardness": 0.2,
+      "resistance": 1.0,
+      "lightOpacity": 0,
+      "lightValue": 0,
+      "encourageFire": 0,
+      "catchFire": 0,
+      "bounds": [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.5625,
+        1.0
+      ],
+      "collision": true,
+      "material": "cloth",
+      "id": 26,
+      "blockitem": {
+        "texture": 45,
+        "type": "item",
+        "stack": 1,
+        "id": 355
+      },
+      "javaName": "bed"
     }
   }
 }

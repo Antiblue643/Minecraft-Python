@@ -201,13 +201,9 @@ class CameraFrustum:
         return True
 
 
-def _intersects_bounds(frustum, bounds, padding):
-    return frustum.intersects_aabb(*bounds, padding=padding)
-
 
 def chunk_in_frustum(
     frustum, cx, cz, chunk_size=16, world_height=128, padding=2.0,
-    extra_bounds=(),
 ):
     x0 = int(cx) * int(chunk_size)
     z0 = int(cz) * int(chunk_size)
@@ -217,13 +213,12 @@ def chunk_in_frustum(
         padding=padding,
     ):
         return True
-    return any(_intersects_bounds(frustum, bounds, padding)
-               for bounds in extra_bounds if bounds is not None)
+    return False
 
 
 def visible_chunk_sections(
     frustum, cx, cz, *, chunk_size=16, world_height=128,
-    section_height=16, padding=2.0, section_bounds=None,
+    section_height=16, padding=2.0,
 ):
     cs = int(chunk_size)
     wh = int(world_height)
@@ -234,24 +229,16 @@ def visible_chunk_sections(
     z1 = z0 + cs
     count = (wh + sh - 1) // sh
 
-    section_bounds = section_bounds or ()
-    extra_bounds = [bounds for bounds in section_bounds if bounds is not None]
-    if (not frustum.intersects_aabb(x0, 0, z0, x1, wh, z1, padding=padding)
-            and not any(_intersects_bounds(frustum, bounds, padding)
-                        for bounds in extra_bounds)):
+    if not frustum.intersects_aabb(x0, 0, z0, x1, wh, z1, padding=padding):
         return ()
-    if (not extra_bounds
-            and _column_fully_inside(frustum, x0, 0, z0, x1, wh, z1, padding)):
+    if _column_fully_inside(frustum, x0, 0, z0, x1, wh, z1, padding):
         return tuple(range(count))
 
     result = []
     for index in range(count):
         y0 = index * sh
         y1 = min(wh, y0 + sh)
-        bounds = section_bounds[index] if index < len(section_bounds) else None
-        if (frustum.intersects_aabb(x0, y0, z0, x1, y1, z1, padding=padding)
-                or (bounds is not None
-                    and _intersects_bounds(frustum, bounds, padding))):
+        if frustum.intersects_aabb(x0, y0, z0, x1, y1, z1, padding=padding):
             result.append(index)
     return tuple(result)
 
@@ -323,7 +310,7 @@ def _aabb_in_frustum(planes, min_x, min_y, min_z, max_x, max_y, max_z):
 
 @njit(cache=True, nogil=True, fastmath=False)
 def cull_section_masks(
-    planes, chunk_x0, chunk_z0, bounds, has_bounds,
+    planes, chunk_x0, chunk_z0,
     section_count, section_height, world_height, chunk_size, padding, masks,
 ):
     p = max(0.0, padding)
@@ -335,30 +322,14 @@ def cull_section_masks(
 
         column_visible = _aabb_in_frustum(planes, x0, 0.0 - p, z0, x1, world_height + p, z1)
         if not column_visible:
-            any_extra = False
-            for s in range(section_count):
-                if has_bounds[c, s] and _aabb_in_frustum(
-                    planes,
-                    bounds[c, s, 0] - p, bounds[c, s, 1] - p, bounds[c, s, 2] - p,
-                    bounds[c, s, 3] + p, bounds[c, s, 4] + p, bounds[c, s, 5] + p,
-                ):
-                    any_extra = True
-                    break
-            if not any_extra:
-                masks[c] = 0
-                continue
+            masks[c] = 0
+            continue
 
         mask = 0
         for s in range(section_count):
             y0 = s * section_height
             y1 = min(world_height, y0 + section_height)
             visible = _aabb_in_frustum(planes, x0, y0 - p, z0, x1, y1 + p, z1)
-            if not visible and has_bounds[c, s]:
-                visible = _aabb_in_frustum(
-                    planes,
-                    bounds[c, s, 0] - p, bounds[c, s, 1] - p, bounds[c, s, 2] - p,
-                    bounds[c, s, 3] + p, bounds[c, s, 4] + p, bounds[c, s, 5] + p,
-                )
             if visible:
                 mask |= (1 << s)
         masks[c] = mask
@@ -382,7 +353,6 @@ def _warm_up_cull_kernel():
     masks = np.zeros(1, dtype=np.int64)
     cull_section_masks(
         planes, np.zeros(1, dtype=np.float64), np.zeros(1, dtype=np.float64),
-        np.zeros((1, 1, 6), dtype=np.float64), np.zeros((1, 1), dtype=np.bool_),
         1, 4, 128, 16, 2.0, masks,
     )
 

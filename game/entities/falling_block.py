@@ -15,16 +15,23 @@ MAX_FALL_TICKS = 100
 
 _REPLACEABLE = frozenset({"water", "lava", "fire", "snow"})
 
-def can_fall_below(world, x, y, z):
+_SNOW_REPLACEABLE = frozenset({"fire", "snow"})
+
+
+def can_fall_below(world, x, y, z, falling_type=None):
     block_type = world.get_block_type(x, y, z)
-    return block_type is None or block_type in _REPLACEABLE
+    if block_type is None:
+        return True
+    if falling_type == "snow":
+        return block_type == "fire"
+    return block_type in _REPLACEABLE
 
 
 def try_to_fall(world, x, y, z):
     block_type = world.get_block_type(x, y, z)
     if block_type not in GRAVITY_BLOCKS or y < 0:
         return None
-    if not can_fall_below(world, x, y - 1, z):
+    if not can_fall_below(world, x, y - 1, z, block_type):
         return None
     meta = world.get_metadata(x, y, z)
     world.set_block(x, y, z, None, immediate_mesh=True)
@@ -54,6 +61,16 @@ def _tick_redstone_torch(world, x, y, z):
 TICK_HANDLERS["redstone_torch"] = _tick_redstone_torch
 TICK_HANDLERS["unlit_redstone_torch"] = _tick_redstone_torch
 
+
+def _tick_redstone_repeater(world, x, y, z):
+    redstone = getattr(world, "_redstone_system", None)
+    if redstone is not None:
+        redstone.apply_repeater_update(x, y, z)
+
+
+TICK_HANDLERS["redstone_repeater"] = _tick_redstone_repeater
+TICK_HANDLERS["redstone_repeater_on"] = _tick_redstone_repeater
+
 class FallingBlockEntity(FallingBlockRendererMixin, Entity):
 
     def __init__(self, block_type, pos, vel=(0.0, 0.0, 0.0), meta=0, fall_time=0.0):
@@ -81,6 +98,9 @@ class FallingBlockEntity(FallingBlockRendererMixin, Entity):
         if world is None or not Item.exists(self.block_type):
             return
         cx, cy, cz = self.center
+        if self.block_type == "snow":
+            world.drop_block_as_item(self.block_type, self.meta, *self._cell())
+            return
         world.spawn_entity(ItemEntity(
             ItemStack(self.block_type, 1), (cx, cy - 0.125, cz), pickup_delay=10,
         ))
@@ -89,7 +109,8 @@ class FallingBlockEntity(FallingBlockRendererMixin, Entity):
         world = Entity.world
         x, y, z = self._cell()
         existing = world.get_block_type(x, y, z)
-        placeable = existing is None or existing in _REPLACEABLE
+        replaceable = _SNOW_REPLACEABLE if self.block_type == "snow" else _REPLACEABLE
+        placeable = existing is None or existing in replaceable
         if placeable and world._get_chunk_index(x, z) in world.chunks:
             world.set_block(x, y, z, self.block_type, meta=self.meta, immediate_mesh=True)
         else:

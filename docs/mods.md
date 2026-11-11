@@ -5,14 +5,14 @@
 The project includes six bundled mods. They can be enabled or disabled from
 **Mods & Texture Packs**; changes take effect after restarting the game.
 
-| Mod                    | Description                                                                     |
-|------------------------|---------------------------------------------------------------------------------|
-| **Corruptor Arrows**   | Adds craftable arrows that scramble nearby blocks when they hit a surface.      |
-| **Controller Support** | Adds gamepad input and controller navigation for menus.                         |
-| **Creative Mode**      | Adds Beta 1.8-like creative mode, plus some extra debug tools.                  |
-| **Eval**               | Adds a restricted expression evaluator to chat through `/eval` and `eval(...)`. |
-| **Herobrine**          | Adds... well... you know... (singleplayer)                                      |
-| **Skin Fix**           | Adds modern 64×64 player skins, including overlays and slim-arm support.        |
+| Mod                       | Description                                                                     |
+|---------------------------|---------------------------------------------------------------------------------|
+| **Advent of Destruction** | Adds features related to the destruction of your world!                         |
+| **Controller Support**    | Adds gamepad input and controller navigation for menus.                         |
+| **Creative Mode**         | Adds Beta 1.8-like creative mode, plus some extra debug tools.                  |
+| **Eval**                  | Adds a restricted expression evaluator to chat through `/eval` and `eval(...)`. |
+| **Herobrine**             | Adds... well... you know... (singleplayer)                                      |
+| **Skin Fix**              | Adds modern 64×64 player skins, including overlays and slim-arm support.        |
 
 ## External Python mods
 

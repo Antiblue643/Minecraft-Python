@@ -122,6 +122,8 @@ class TileEntityDispenser(TileEntity):
         self.contents = [None] * self.SIZE
         self._was_powered = False
         self._scheduled_tick = None
+        self._pending_ticks = []
+        self._power_signature_cache = None
 
     def get_stack(self, slot):
         return self.contents[slot] if 0 <= int(slot) < self.SIZE else None
@@ -132,6 +134,9 @@ class TileEntityDispenser(TileEntity):
 
     def get_inv_name(self):
         return "Dispenser"
+
+    def shift_world_time(self, delta):
+        self._pending_ticks = [due + int(delta) for due in self._pending_ticks]
 
     def can_interact_with(self, player):
         if self.world is None or self.world.get_tile_entity(self.x, self.y, self.z) is not self:
@@ -262,18 +267,52 @@ class TileEntityDispenser(TileEntity):
             self.x, self.y + 1, self.z,
         )
         now = int(getattr(self.world, "world_time", 0) or 0)
-        if not powered:
-            self._was_powered = False
-            self._scheduled_tick = None
-            return False
-        if not self._was_powered:
+        pending = self._pending_ticks
+
+        if powered:
+            signature = self._power_signature()
+            if not self._was_powered or signature != self._power_signature_cache:
+                due = now + self.TICK_DELAY
+                if due not in pending:
+                    pending.append(due)
+                    pending.sort()
             self._was_powered = True
-            self._scheduled_tick = now + self.TICK_DELAY
-            return False
-        if self._scheduled_tick is not None and now >= self._scheduled_tick:
-            self._scheduled_tick = None
-            return self.dispense_one()
-        return False
+            self._power_signature_cache = signature
+        else:
+            self._was_powered = False
+            self._power_signature_cache = None
+
+        fired = False
+        while pending and pending[0] <= now:
+            pending.pop(0)
+            if powered and self.dispense_one():
+                fired = True
+        return fired
+
+    def _power_signature(self):
+        world = self.world
+        get_type = getattr(world, "get_block_type", None)
+        get_meta = getattr(world, "get_metadata", None)
+        if not callable(get_type):
+            return ()
+        from game.block.redstone import COMPONENTS, DOORS
+        providers = COMPONENTS - DOORS
+        seen = set()
+        signature = []
+        for base_y in (self.y, self.y + 1):
+            for dx in range(-2, 3):
+                for dy in range(-2, 3):
+                    reach = 2 - abs(dx) - abs(dy)
+                    for dz in range(-reach, reach + 1):
+                        pos = (self.x + dx, base_y + dy, self.z + dz)
+                        if pos in seen or pos == (self.x, self.y, self.z):
+                            continue
+                        seen.add(pos)
+                        block_type = get_type(*pos)
+                        if block_type in providers:
+                            meta = int(get_meta(*pos)) if callable(get_meta) else 0
+                            signature.append((pos, block_type, meta))
+        return tuple(sorted(signature))
 
     def to_dict(self):
         items = []

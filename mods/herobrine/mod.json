@@ -1,8 +1,5 @@
 {
   "id": "herobrine",
-  "name": "Herobrine",
-  "version": "1.0",
-  "description": "A mysterious presence!",
   "entry": "mod.py",
   "default_enabled": false,
   "content_heavy": true

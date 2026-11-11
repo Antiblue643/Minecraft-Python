@@ -143,6 +143,12 @@
       "size_y": 64,
       "offset_x": 64,
       "offset_y": 192
+    },
+    "BurningSkull": {
+      "size_x": 64,
+      "size_y": 64,
+      "offset_x": 128,
+      "offset_y": 192
     }
   }
 }

@@ -149,6 +149,11 @@ class ItemRendererMixin:
         spin = math.degrees(self.age / 20.0 + self.hover_start)
         if self._is_block:
             self._draw_block(x, y + self.size[1] * 0.5 + bob, z, spin, copies, rng)
+        elif getattr(self, "_is_slab", False):
+            self._draw_block_model(
+                x, y + self.size[1] * 0.5 + bob + 0.125, z,
+                spin, copies, rng,
+            )
         elif getattr(self, "_is_fence", False):
             self._draw_fence(x, y + self.size[1] * 0.5 + bob, z, spin, copies, rng)
         elif getattr(self, "_is_cactus", False) or getattr(self, "_is_snow_layer", False):
@@ -164,7 +169,8 @@ class ItemRendererMixin:
         if self._burning_ticks > 0.0:
             center_y = (
                 y + self.size[1] * 0.5 + bob
-                if (self._is_block or getattr(self, "_is_cactus", False)
+                if (self._is_block or getattr(self, "_is_slab", False)
+                        or getattr(self, "_is_cactus", False)
                         or getattr(self, "_is_fence", False))
                 else y + ITEM_SCALE + bob
             )
@@ -232,16 +238,20 @@ class ItemRendererMixin:
         if not defn or Item.block_texture is None:
             return
 
-        faces = Item.block_faces(self.item.id, self.item.damage)
-
         def face_idx(slot):
-            if slot == 3 and self.item.id == "grass_block" and isinstance(faces, list):
-                return faces[0]
-            return faces[slot] if isinstance(faces, list) else faces
+            return Item.block_face_texture(self.item.id, slot, self.item.damage)
+
+        def set_face_color(slot, shade):
+            tint = Item.block_item_tint(self.item.id, self.item.damage, slot=slot)
+            tint_rgb = tuple(channel / 255.0 for channel in tint)
+            glColor3f(
+                shade * self._draw_brightness * tint_rgb[0],
+                shade * self._draw_brightness * tint_rgb[1],
+                shade * self._draw_brightness * tint_rgb[2],
+            )
 
         t = BLOCK_ATLAS_TILE
         s = BLOCK_SCALE
-        b = self._draw_brightness
 
         glPushMatrix()
         renderer = getattr(self, "renderer", None) or Entity.renderer
@@ -254,6 +264,7 @@ class ItemRendererMixin:
 
         Item.block_texture.bind()
         glEnable(GL_TEXTURE_2D)
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
         blend_was_on = bool(glIsEnabled(GL_BLEND))
         glEnable(GL_BLEND)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -268,7 +279,7 @@ class ItemRendererMixin:
                 )
 
             u, v = self._block_uv(face_idx(4))
-            glColor3f(0.9 * b, 0.9 * b, 0.9 * b)
+            set_face_color(4, 0.9)
             glBegin(GL_QUADS)
             glNormal3f(0, 0, 1)
             glTexCoord2f(u,     v + t); glVertex3f(-s,  s,  s)
@@ -278,7 +289,7 @@ class ItemRendererMixin:
             glEnd()
 
             u, v = self._block_uv(face_idx(5))
-            glColor3f(0.9 * b, 0.9 * b, 0.9 * b)
+            set_face_color(5, 0.9)
             glBegin(GL_QUADS)
             glNormal3f(0, 0, -1)
             glTexCoord2f(u,     v + t); glVertex3f( s,  s, -s)
@@ -288,7 +299,7 @@ class ItemRendererMixin:
             glEnd()
 
             u, v = self._block_uv(face_idx(2))
-            glColor3f(0.5 * b, 0.5 * b, 0.5 * b)
+            set_face_color(2, 0.5)
             glBegin(GL_QUADS)
             glNormal3f(0, -1, 0)
             glTexCoord2f(u,     v    ); glVertex3f(-s, -s, -s)
@@ -298,7 +309,7 @@ class ItemRendererMixin:
             glEnd()
 
             u, v = self._block_uv(face_idx(3))
-            glColor3f(1.0 * b, 1.0 * b, 1.0 * b)
+            set_face_color(3, 1.0)
             glBegin(GL_QUADS)
             glNormal3f(0, 1, 0)
             glTexCoord2f(u,     v + t); glVertex3f(-s,  s, -s)
@@ -308,7 +319,7 @@ class ItemRendererMixin:
             glEnd()
 
             u, v = self._block_uv(face_idx(0))
-            glColor3f(0.75 * b, 0.75 * b, 0.75 * b)
+            set_face_color(0, 0.75)
             glBegin(GL_QUADS)
             glNormal3f(1, 0, 0)
             glTexCoord2f(u,     v + t); glVertex3f( s,  s,  s)
@@ -318,7 +329,7 @@ class ItemRendererMixin:
             glEnd()
 
             u, v = self._block_uv(face_idx(1))
-            glColor3f(0.75 * b, 0.75 * b, 0.75 * b)
+            set_face_color(1, 0.75)
             glBegin(GL_QUADS)
             glNormal3f(-1, 0, 0)
             glTexCoord2f(u,     v + t); glVertex3f(-s,  s, -s)
@@ -388,8 +399,13 @@ class ItemRendererMixin:
         if Item.block_texture is None:
             return
         try:
-            block = Block(self.item.id, (0.0, 0.0, 0.0))
-            block._mesh_meta = 0
+            block_type = Item.placed_block(self.item.id) or self.item.id
+            block = Block(block_type, (0.0, 0.0, 0.0))
+            meta = int(getattr(self.item, "damage", 0) or 0) & 15
+            block._mesh_meta = meta
+            block.faces = Item.block_faces(
+                self.item.id, meta, default=getattr(block, "faces", None),
+            )
             mesh_data = block.get_mesh_data()
         except Exception:
             return

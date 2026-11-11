@@ -18,7 +18,8 @@ FLORA = _FLOWERS | _MUSHROOMS | {"crops"}
 SUPPORT_TYPES = FLORA | {
     "torch", "redstone_torch", "unlit_redstone_torch", "lever", "stone_button", "cactus",
     "stone_pressure_plate", "wooden_pressure_plate", "ladder", "rail",
-    "redstone_wire", "wooden_door", "iron_door", "fire", "sign", "wall_sign", "reed",
+    "redstone_wire", "redstone_repeater", "redstone_repeater_on",
+    "wooden_door", "iron_door", "fire", "sign", "wall_sign", "reed",
 }
 
 _NON_SOLID_MATERIAL_BLOCKS = frozenset({"torch", "ladder", "rail", "fire"})
@@ -31,7 +32,7 @@ def _material_is_solid(block_type):
     definition = Block._block_defs.get(block_type)
     return material_for_block(block_type, definition).is_solid
 
-GRAVITY_BLOCKS = frozenset({"sand", "gravel"})
+GRAVITY_BLOCKS = frozenset({"sand", "gravel", "snow"})
 
 STAIR_TYPES = frozenset({"stairs", "cobblestone_stairs"})
 STAIR_MODEL_BLOCK = {
@@ -146,7 +147,7 @@ def should_break(world, block_type, meta, x, y, z):
             return True
         return not _material_is_solid(below)
 
-    if block_type in ("sign", "redstone_wire", "stone_pressure_plate", "wooden_pressure_plate"):
+    if block_type in ("sign", "redstone_wire", "stone_pressure_plate", "wooden_pressure_plate", "redstone_repeater", "redstone_repeater_on"):
         return not normal_cube(world, x, y - 1, z)
 
     if block_type == "stone_button":
@@ -292,6 +293,17 @@ def update_stair_block(world, x, y, z):
 
 def check_support(world, x, y, z):
     block_type = world.get_block_type(x, y, z)
+    if block_type == "snow":
+        below = world.get_block_type(x, y - 1, z)
+        if below is None or below == "fire":
+            schedule = getattr(world, "schedule_block_update", None)
+            if schedule is not None:
+                schedule(x, y, z, block_type)
+            return False
+        if _material_is_solid(below):
+            return False
+        _remove(world, x, y, z)
+        return True
     if block_type in GRAVITY_BLOCKS:
         schedule = getattr(world, "schedule_block_update", None)
         if schedule is not None:
@@ -308,11 +320,6 @@ def check_support(world, x, y, z):
             )
             return True
         return False
-    if block_type == "snow":
-        if _material_is_solid(world.get_block_type(x, y - 1, z)):
-            return False
-        _remove(world, x, y, z)
-        return True
     if block_type not in SUPPORT_TYPES:
         return False
 

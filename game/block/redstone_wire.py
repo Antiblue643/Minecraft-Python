@@ -8,7 +8,7 @@ UP_WEST = 16
 UP_EAST = 32
 UP_NORTH = 64
 UP_SOUTH = 128
-REDSTONE_WIRE_TEXTURE = 84
+REDSTONE_WIRE_TEXTURE = 164
 
 _POWER_PROVIDER_TYPES = frozenset({
     "redstone_wire",
@@ -18,13 +18,18 @@ _POWER_PROVIDER_TYPES = frozenset({
     "wooden_pressure_plate",
     "redstone_torch",
     "unlit_redstone_torch",
+    "redstone_repeater",
+    "redstone_repeater_on",
 })
 
 
 def redstone_wire_color(power_level: int):
     level = max(0, min(15, int(power_level)))
-    strength = 0.30 + (level / 15.0) * 0.70
-    return (strength, 0.035 + (level / 15.0) * 0.12, 0.015 + (level / 15.0) * 0.045)
+    f = level / 15.0
+    red = 0.0 if level == 0 else f * 0.6 + 0.4
+    green = max(0.0, f * f * 0.7 - 0.5)
+    blue = max(0.0, f * f * 0.6 - 0.7)
+    return (red, green, blue)
 
 
 def redstone_wire_render_flags(*, west=False, east=False, north=False, south=False,

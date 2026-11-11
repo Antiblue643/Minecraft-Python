@@ -1,8 +1,5 @@
 {
   "id": "creative",
-  "name": "Creative Mode",
-  "version": "0.4",
-  "description": "A taste of beta 1.8.",
   "entry": "mod.py",
   "default_enabled": false,
   "multiplayer_compatible": false

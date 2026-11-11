@@ -4,6 +4,12 @@ import math
 import random
 
 from .entity import Entity, MAX_DT, TICKS_PER_SECOND
+from . import player_model as _player_model
+from .entity_shadow import (
+    SHADOW_SIZE_LIVING as _SHADOW_SIZE_LIVING,
+    render_entity_shadow as _render_entity_shadow,
+    shadow_opacity_for_distance as _shadow_opacity_for_distance,
+)
 
 
 def _wrap_degrees(value: float) -> float:
@@ -156,6 +162,11 @@ class Mob(Entity):
 
         permanent_mob = type(self) is Mob
         if permanent_mob or Mob.global_ai_paused or type(self).ai_frozen:
+            self.move_strafing = 0.0
+            self.move_forward = 0.0
+            self.random_yaw_velocity = 0.0
+            self.is_jumping = False
+            self._pending_path_yaw = None
             self._idle_look()
             return
 
@@ -885,21 +896,19 @@ class Mob(Entity):
         head_pitch = prev_pitch + (float(self.rotation_pitch) - prev_pitch) * partial
 
         try:
-            from game.entities.entity_shadow import (
-                SHADOW_SIZE_LIVING, render_entity_shadow, shadow_opacity_for_distance,
-            )
-            opacity = shadow_opacity_for_distance(world, x, y, z)
+            opacity = _shadow_opacity_for_distance(world, x, y, z)
             if opacity > 0.0:
-                render_entity_shadow(world, x, y, z, SHADOW_SIZE_LIVING, opacity=opacity)
+                _render_entity_shadow(
+                    world, x, y, z, _SHADOW_SIZE_LIVING, opacity=opacity,
+                )
         except Exception:
             pass
 
-        from game.entities import player_model
-        player_model.render_player_model(
+        _player_model.render_player_model(
             self, x, y - self.render_y_offset, z, body_yaw, partial,
             head_yaw=head_yaw, head_pitch=head_pitch,
         )
         if int(getattr(self, "_fire_ticks", 0)) > 0:
-            player_model.render_player_fire_effect(
+            _player_model.render_player_fire_effect(
                 self, x, y - self.render_y_offset, z,
             )

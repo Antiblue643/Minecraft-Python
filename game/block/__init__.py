@@ -85,7 +85,6 @@ class Block:
 
         self.faces = self.definition.get("faces", 0)
         self.model_name = self.definition.get("model", "cube")
-        self.intangible = self.definition.get("intangible", False)
         self.nCull = self.definition.get("nCull", "all")
         self.transparent = self.definition.get("transparent", False)
 
@@ -94,9 +93,7 @@ class Block:
         self._display_list = None
 
         self.bounds = self.definition.get("bounds", [0.0, 0.0, 0.0, 1.0, 1.0, 1.0])
-        self.collision = self.definition.get(
-            "collision", not self.intangible
-        )
+        self.collision = self.definition.get("collision", True)
 
     @staticmethod
     def classic_to_center(bounds):
@@ -387,6 +384,8 @@ class Block:
             return self._get_cactus_mesh_data()
         if self.block_type == "cake":
             return self._get_cake_mesh_data()
+        if self.block_type == "bed":
+            return self._get_bed_mesh_data()
         if self.model_name == "cube":
             return self._get_cube_mesh_data()
         if self.model_name == "farmland" or self.block_type == "farmland":
@@ -397,6 +396,10 @@ class Block:
             return self._get_portal_mesh_data()
         if self.model_name == "redstone_wire" or self.block_type == "redstone_wire":
             return self._get_redstone_wire_mesh_data()
+        if self.model_name == "redstone_repeater" or self.block_type in (
+            "redstone_repeater", "redstone_repeater_on",
+        ):
+            return self._get_redstone_repeater_mesh_data()
         if self.model_name == "lever" or self.block_type == "lever":
             return self._get_lever_mesh_data()
         if self.model_name == "button" or self.block_type == "stone_button":
@@ -429,8 +432,11 @@ class Block:
         from game.block.redstone_wire import build_redstone_wire_mesh_data
 
         meta = self._resolve_meta()
-        texture = 84 + (16 if meta > 0 else 0)
+        texture = 164
         base_shade = default_lighting.face_color((0, 1, 0))
+        from game.block.redstone_wire import redstone_wire_color
+        tint = redstone_wire_color(meta)
+        wire_color = tuple(float(base_shade[i]) * float(tint[i]) for i in range(3))
         flags = int(getattr(self, "_mesh_wire_flags", 0))
         if not flags and self.world is not None:
             try:
@@ -442,8 +448,100 @@ class Block:
             self.pos,
             flags=flags,
             texture_index=texture,
-            color=tuple(float(c) for c in base_shade),
+            color=wire_color,
         )
+
+    def _get_redstone_repeater_mesh_data(self):
+        meta = self._resolve_meta()
+        facing = meta & 3
+        delay_index = (meta >> 2) & 3
+        powered = self.block_type == "redstone_repeater_on"
+        bottom_tile = 99 if powered else 115
+        top_tile = 147 if powered else 131
+        px, py, pz = (float(v) for v in self.pos)
+        out = []
+        body_bounds = (-0.5, -0.5, -0.5, 0.5, -0.375, 0.5)
+        x0, y0, z0, x1, y1, z1 = body_bounds
+        local_quads = (
+            ((0, 0, 1), ((x0,y0,z1),(x1,y0,z1),(x1,y1,z1),(x0,y1,z1)), 5),
+            ((0, 0,-1), ((x1,y0,z0),(x0,y0,z0),(x0,y1,z0),(x1,y1,z0)), 5),
+            ((0, 1, 0), ((x0,y1,z1),(x1,y1,z1),(x1,y1,z0),(x0,y1,z0)), top_tile),
+            ((0,-1, 0), ((x0,y0,z0),(x1,y0,z0),(x1,y0,z1),(x0,y0,z1)), bottom_tile),
+            ((1, 0, 0), ((x1,y0,z1),(x1,y0,z0),(x1,y1,z0),(x1,y1,z1)), 5),
+            ((-1,0, 0), ((x0,y0,z0),(x0,y0,z1),(x0,y1,z1),(x0,y1,z0)), 5),
+        )
+
+        atlas_u, atlas_v = self._atlas_uv(top_tile)
+        atlas_u1 = atlas_u + 15.99 / 256.0
+        atlas_v1 = atlas_v + 15.99 / 256.0
+        top_uv_by_facing = {
+            0: ((atlas_u, atlas_v), (atlas_u1, atlas_v),
+                (atlas_u1, atlas_v1), (atlas_u, atlas_v1)),
+            1: ((atlas_u1, atlas_v), (atlas_u1, atlas_v1),
+                (atlas_u, atlas_v1), (atlas_u, atlas_v)),
+            2: ((atlas_u1, atlas_v1), (atlas_u, atlas_v1),
+                (atlas_u, atlas_v), (atlas_u1, atlas_v)),
+            3: ((atlas_u, atlas_v1), (atlas_u, atlas_v),
+                (atlas_u1, atlas_v), (atlas_u1, atlas_v1)),
+        }
+        for direction, quad, tile_index in local_quads:
+            vertices = [(px+x, py+y, pz+z) for x,y,z in quad]
+            if direction == (0, 1, 0):
+                uvs = top_uv_by_facing[facing]
+            else:
+                uvs = self._face_uvs_for_quad(quad, tile_index, direction)
+            out.append((direction, vertices, uvs, False, False,
+                        default_lighting.face_color(direction)))
+
+        moving_offset = (-1/16, 1/16, 3/16, 5/16)[delay_index]
+        torch_centers = {
+            0: ((0.0, moving_offset), (0.0, -5/16)),
+            1: ((-moving_offset, 0.0), (5/16, 0.0)),
+            2: ((0.0, -moving_offset), (0.0, 5/16)),
+            3: ((moving_offset, 0.0), (-5/16, 0.0)),
+        }[facing]
+
+        u, v = self._atlas_uv(bottom_tile)
+        atlas_tile = 1.0 / 16.0
+        stick_uv = ((u, v + atlas_tile), (u, v),
+                    (u + atlas_tile, v), (u + atlas_tile, v + atlas_tile))
+        cap_uv = ((u + 7/256, v + 10/256),
+                  (u + 7/256, v + 8/256),
+                  (u + 9/256, v + 8/256),
+                  (u + 9/256, v + 10/256))
+        torch_color = default_lighting.face_color((0, 1, 0), 15)
+        half_width = 1.0 / 16.0
+        bottom_y = py - 0.5 - 3.0 / 16.0
+        cap_y = bottom_y + 10.0 / 16.0
+        side_top_y = bottom_y + 1.0
+
+        for cx, cz in torch_centers:
+            tx, tz = px + cx, pz + cz
+            sprite_quads = (
+                (((tx-half_width, cap_y, tz-half_width),
+                  (tx-half_width, cap_y, tz+half_width),
+                  (tx+half_width, cap_y, tz+half_width),
+                  (tx+half_width, cap_y, tz-half_width)), cap_uv),
+                (((tx-half_width, side_top_y, tz-0.5),
+                  (tx-half_width, bottom_y, tz-0.5),
+                  (tx-half_width, bottom_y, tz+0.5),
+                  (tx-half_width, side_top_y, tz+0.5)), stick_uv),
+                (((tx+half_width, side_top_y, tz+0.5),
+                  (tx+half_width, bottom_y, tz+0.5),
+                  (tx+half_width, bottom_y, tz-0.5),
+                  (tx+half_width, side_top_y, tz-0.5)), stick_uv),
+                (((tx-0.5, side_top_y, tz+half_width),
+                  (tx-0.5, bottom_y, tz+half_width),
+                  (tx+0.5, bottom_y, tz+half_width),
+                  (tx+0.5, side_top_y, tz+half_width)), stick_uv),
+                (((tx+0.5, side_top_y, tz-half_width),
+                  (tx+0.5, bottom_y, tz-half_width),
+                  (tx-0.5, bottom_y, tz-half_width),
+                  (tx-0.5, side_top_y, tz-half_width)), stick_uv),
+            )
+            for vertices, uvs in sprite_quads:
+                out.append(((0, 0, 0), vertices, uvs, False, False, torch_color))
+        return out
 
     def _box_mesh_local(self, bounds, texture_index, *, double_sided=False, scale_uv=False):
         x0, y0, z0, x1, y1, z1 = (float(v) for v in bounds)
@@ -457,12 +555,24 @@ class Block:
             ((-1,0, 0), ((x0,y0,z0),(x0,y0,z1),(x0,y1,z1),(x0,y1,z0))),
         )
         out = []
+        face_slots = {
+            (1, 0, 0): 0, (-1, 0, 0): 1,
+            (0, -1, 0): 2, (0, 1, 0): 3,
+            (0, 0, 1): 4, (0, 0, -1): 5,
+        }
         for direction, quad in quads:
             vertices = [(px+x, py+y, pz+z) for x,y,z in quad]
+            face_texture = texture_index
+            if isinstance(texture_index, (list, tuple)):
+                slot = face_slots.get(direction, 0)
+                face_texture = (
+                    texture_index[slot]
+                    if slot < len(texture_index) else texture_index[0]
+                )
             if scale_uv:
-                uvs = self._face_uvs_for_quad(quad, int(texture_index), direction)
+                uvs = self._face_uvs_for_quad(quad, int(face_texture), direction)
             else:
-                u, v = self._atlas_uv(int(texture_index))
+                u, v = self._atlas_uv(int(face_texture))
                 tile = 1.0 / 16.0
                 u0, u1 = u, u + tile * (15.99 / 16.0)
                 v0, v1 = v, v + tile * (15.99 / 16.0)
@@ -571,8 +681,9 @@ class Block:
         return out
 
     def _get_snow_layer_mesh_data(self):
+        texture = self.faces if self.faces is not None else 66
         return self._box_mesh_local(
-            (-0.5, -0.5, -0.5, 0.5, -0.5 + 2.0 / 16.0, 0.5), 66,
+            (-0.5, -0.5, -0.5, 0.5, -0.5 + 2.0 / 16.0, 0.5), texture,
             scale_uv=True,
         )
 
@@ -1267,6 +1378,137 @@ class Block:
             color = default_lighting.face_color(direction)
             out.append((vertices, tuple(uvs), cull_backface, False, color))
         return out
+
+    def _get_bed_mesh_data(self):
+        meta = self._resolve_meta()
+        direction = meta & 3
+        is_head = bool(meta & 8)
+        px, py, pz = (float(value) for value in self.pos)
+
+        side_y0 = -0.5
+        underside_y = -0.5 + 3.0 / 16.0
+        top_y = -0.5 + 9.0 / 16.0
+        x0, x1 = -0.5, 0.5
+        z0, z1 = -0.5, 0.5
+
+        model_faces = (
+            (1, 0, 3, 2, 5, 4),
+            (1, 0, 5, 4, 2, 3),
+            (1, 0, 2, 3, 4, 5),
+            (1, 0, 4, 5, 3, 2),
+        )[direction]
+
+        def texture_for(java_side):
+            face = model_faces[java_side]
+            if is_head:
+                if face == 2:
+                    return 152
+                if face not in (4, 5):
+                    return 135
+                return 151
+            if face == 3:
+                return 149
+            if face not in (4, 5):
+                return 134
+            return 150
+
+        quads = [
+            ((0, -1, 0),
+             ((x0, underside_y, z1), (x0, underside_y, z0),
+              (x1, underside_y, z0), (x1, underside_y, z1)),
+             0, False),
+            ((0, 1, 0),
+             ((x1, top_y, z1), (x1, top_y, z0),
+              (x0, top_y, z0), (x0, top_y, z1)),
+             1, True),
+            ((0, 0, 1),
+             ((x0, side_y0, z1), (x1, side_y0, z1),
+              (x1, top_y, z1), (x0, top_y, z1)),
+             3, False),
+            ((0, 0, -1),
+             ((x1, side_y0, z0), (x0, side_y0, z0),
+              (x0, top_y, z0), (x1, top_y, z0)),
+             2, False),
+            ((1, 0, 0),
+             ((x1, side_y0, z1), (x1, side_y0, z0),
+              (x1, top_y, z0), (x1, top_y, z1)),
+             5, False),
+            ((-1, 0, 0),
+             ((x0, side_y0, z0), (x0, side_y0, z1),
+              (x0, top_y, z1), (x0, top_y, z0)),
+             4, False),
+        ]
+
+        from game.block.bed import bed_head_offset
+        head_dx, head_dz = bed_head_offset(direction)
+        seam_direction = (
+            (-head_dx, 0, -head_dz) if is_head
+            else (head_dx, 0, head_dz)
+        )
+
+        output = []
+        top_tile = texture_for(1)
+        u, v = self._atlas_uv(top_tile)
+        u1 = u + (16.0 - 0.01) / 256.0
+        v1 = v + (16.0 - 0.01) / 256.0
+        var38, var40, var42, var44 = u, u1, v, v
+        var46, var48, var50, var52 = u, u1, v1, v1
+        if direction == 0:
+            var40, var42, var46, var52 = u, v1, u1, v
+        elif direction == 2:
+            var38, var44, var48, var50 = u1, v1, u, v
+        elif direction == 3:
+            var38, var44, var48, var50 = u1, v1, u, v
+            var40, var42, var46, var52 = u, v1, u1, v
+        top_uvs = (
+            (var46, var50), (var38, var42),
+            (var40, var44), (var48, var52),
+        )
+
+        flip_side = {0: 5, 1: 3, 2: 4, 3: 2}[direction]
+        for face_direction, local_quad, java_side, is_top in quads:
+            if face_direction == seam_direction:
+                continue
+            quad = tuple(
+                (px + x, py + y, pz + z) for x, y, z in local_quad
+            )
+            tile = 4 if java_side == 0 else texture_for(java_side)
+            if is_top:
+                uvs = top_uvs
+            else:
+                tile_u, tile_v = self._atlas_uv(tile)
+                uvs = []
+                for vx, vy, vz in local_quad:
+                    xf, yf, zf = vx + 0.5, vy + 0.5, vz + 0.5
+                    if face_direction[0] == 1:
+                        uf = 1.0 - zf
+                    elif face_direction[0] == -1:
+                        uf = zf
+                    elif face_direction[2] == 1:
+                        uf = xf
+                    else:
+                        uf = 1.0 - xf
+                    vf = 7.0 / 16.0 + yf
+                    u = tile_u + uf / 16.0
+                    v = tile_v + vf / 16.0
+                    if uf >= 1.0 - 1e-8 or vf >= 1.0 - 1e-8:
+                        if uf >= 1.0 - 1e-8:
+                            u -= 0.01 / 256.0
+                        if vf >= 1.0 - 1e-8:
+                            v -= 0.01 / 256.0
+                    uvs.append((u, v))
+                uvs = tuple(uvs)
+                if java_side == flip_side:
+                    tile_u_end = tile_u + 15.99 / 256.0
+                    uvs = tuple(
+                        (tile_u_end - (uv[0] - tile_u), uv[1])
+                        for uv in uvs
+                    )
+            output.append((
+                face_direction, quad, uvs, True, False,
+                default_lighting.face_color(face_direction),
+            ))
+        return output
 
     def _get_cube_mesh_data(self):
         px, py, pz = self.pos

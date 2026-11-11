@@ -62,6 +62,9 @@ def block_drops(block_type, meta=0, rng=random, held=None):
     if block_type in _DROPS_NOTHING or not _has_required_drop_tool(block_type, held):
         return []
 
+    if block_type == "double_stone_slab":
+        return [ItemStack("stone_slab", 2, int(meta) & 3)]
+
     handled, item_id, count = _conditional_drop(block_type, meta, rng)
     if not handled:
         item_id = _DROPS_AS.get(block_type, block_type)

@@ -92,6 +92,13 @@ class GameInputMixin:
         s = self.settings
         player = self.player
         key = event.key
+        modifiers = getattr(event, "mod", None)
+        if modifiers is None:
+            try:
+                modifiers = pg.key.get_mods()
+            except Exception:
+                modifiers = 0
+
         if key == pg.K_F2:
             from game.app.screenshot import save_screenshot
             try:
@@ -103,18 +110,27 @@ class GameInputMixin:
                     self.add_chat_message(f"Saved screenshot: {path.name}")
         elif key == pg.K_ESCAPE:
             self.display_gui_screen(GuiIngameMenu())
+        elif key == pg.K_F1:
+            self.hide_gui = not bool(getattr(self, "hide_gui", False))
         elif key == s.key_inventory.key:
             player.stop_digging()
             self.display_gui_screen(GuiInventory(player))
+        elif key == pg.K_F3 and modifiers & pg.KMOD_ALT:
+            self.toggle_performance_log()
         elif key == s.key_debug.key:
-            if pg.key.get_mods() & pg.KMOD_SHIFT:
+            if modifiers & pg.KMOD_SHIFT:
                 self.gui.toggle_chunk_borders()
             else:
                 self.gui.toggle_debug()
         elif key == pg.K_F5:
             self._toggle_third_person_view()
         elif key == pg.K_F8:
-            self.toggle_performance_log()
+            s.smooth_mouse = not bool(getattr(s, "smooth_mouse", False))
+            if not s.smooth_mouse:
+                for name in ("_smooth_mouse_filter_x", "_smooth_mouse_filter_y"):
+                    mouse_filter = getattr(self, name, None)
+                    if mouse_filter is not None:
+                        mouse_filter.reset()
         elif key == s.key_drop.key:
             player.drop_current_item()
         elif key == s.key_toggle_fog.key:

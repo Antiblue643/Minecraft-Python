@@ -16,8 +16,6 @@ def _is_solid(world, x, y, z):
         return False
     if getattr(block, "collision", None) is False:
         return False
-    if getattr(block, "intangible", False) and getattr(block, "collision", None) is not True:
-        return False
     n_cull = getattr(block, "nCull", "all")
     if n_cull == "none" and block.block_type not in ("glass", "mob_spawner", "ice"):
         return False
@@ -182,7 +180,7 @@ def can_place(world, block_type, x, y, z, face=None, player_yaw=0.0):
             return False
         return _is_solid(world, x, y - 1, z)
 
-    if block_type in ("rail", "redstone_wire", "stone_pressure_plate", "wooden_pressure_plate"):
+    if block_type in ("rail", "redstone_wire", "stone_pressure_plate", "wooden_pressure_plate", "redstone_repeater", "redstone_repeater_on"):
         return _normal_cube(world, x, y - 1, z)
 
     if block_type == "stone_button":
@@ -199,6 +197,11 @@ def can_place(world, block_type, x, y, z, face=None, player_yaw=0.0):
         if above is not None and above.block_type not in ("water", "lava"):
             return False
         return _is_solid(world, x, y - 1, z)
+
+    if block_type == "bed":
+        from game.block.bed import bed_orientation_from_yaw, can_place_bed
+        direction = bed_orientation_from_yaw(player_yaw)
+        return can_place_bed(world, x, y, z, direction)
 
     if block_type in ("torch", "redstone_torch", "unlit_redstone_torch", "lever"):
         if _is_opaque_cube(world, x, y - 1, z):
@@ -241,6 +244,15 @@ def can_place(world, block_type, x, y, z, face=None, player_yaw=0.0):
 def placement_meta(world, block_type, x, y, z, face=None, player_yaw=0.0):
     face = face or (0, 0, 0)
     fx, fy, fz = face
+
+    if block_type == "bed":
+        from game.block.bed import bed_orientation_from_yaw
+        return bed_orientation_from_yaw(player_yaw)
+
+    if block_type in ("redstone_repeater", "redstone_repeater_on"):
+        import math
+        yaw_quadrant = int(math.floor(float(player_yaw) * 4.0 / 360.0 + 0.5)) & 3
+        return (0, 3, 2, 1)[yaw_quadrant]
 
     if block_type == "stone_button":
         if fx == 1 and _is_opaque_cube(world, x - 1, y, z):

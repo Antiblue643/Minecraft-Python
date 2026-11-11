@@ -882,6 +882,15 @@
       "id": 354,
       "block": "cake",
       "javaName": "cake"
+    },
+    "bed": {
+      "texture": 45,
+      "type": "generic",
+      "hold": "generic",
+      "stack": 1,
+      "id": 355,
+      "block": "bed",
+      "javaName": "bed"
     }
   }
 }

@@ -130,6 +130,7 @@ class Squid(Creature):
         return None
 
     def _living_ai_tick(self) -> None:
+        self._check_water()
         super()._living_ai_tick()
         if (self.dead or self.health <= 0
                 or bool(getattr(type(self), "global_ai_paused", False))
@@ -225,28 +226,7 @@ class Squid(Creature):
             self.drop_item("dye", 1, damage=0)
 
     def interact(self, player) -> bool:
-        if self.dead or player is None or getattr(player, "health", 1) <= 0:
-            return False
-        inventory = getattr(player, "inventory", None)
-        get_active = getattr(inventory, "get_active_item", None)
-        held = get_active() if callable(get_active) else None
-        if (held is None or getattr(held, "id", None) != "bucket"
-                or int(getattr(held, "count", 0)) <= 0):
-            return False
-
-        world = Entity.world
-        if (bool(getattr(world, "_multiplayer_client_world", False))
-                and bool(getattr(self, "_mp_remote_entity", False))):
-            request = getattr(world, "_network_entity_interact_callback", None)
-            return bool(request(self, "milk_squid")) if callable(request) else False
-
-        set_stack = getattr(inventory, "set_stack", None)
-        if not callable(set_stack):
-            return False
-        slot = getattr(inventory, "active_idx", getattr(inventory, "current_item", 0))
-        from .item import ItemStack
-        set_stack(slot, ItemStack("milk_bucket"))
-        return True
+        return False
 
     def draw(self):
         from .mob_models import draw_living_with_model

@@ -256,7 +256,7 @@ def _next_double(state):
 def replace_surface_blocks(blocks, sand_noise, gravel_noise, stone_noise,
                            biome_top_ids, biome_filler_ids,
                            bedrock_id, sand_id, gravel_id,
-                           stone_id, water_id, chunk_seed):
+                           stone_id, water_id, sandstone_id, chunk_seed):
     state = ((chunk_seed ^ _MULTIPLIER) & _MASK)
     for x in range(16):
         for z in range(16):
@@ -301,6 +301,10 @@ def replace_surface_blocks(blocks, sand_noise, gravel_noise, stone_noise,
                         elif remaining > 0:
                             remaining -= 1
                             blocks[index] = filler_id
+                            if (remaining == 0 and filler_id == sand_id
+                                    and sandstone_id != 0):
+                                state, remaining = _next_int_bound(state, 4)
+                                filler_id = sandstone_id
     return state
 
 

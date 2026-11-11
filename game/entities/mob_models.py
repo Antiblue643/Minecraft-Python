@@ -37,8 +37,14 @@ from game.entities.player_model import (
     _bind_skin,
     resolve_skin_texture,
 )
+from game.entities.model_layout import (
+    CREEPER_LEG_HEIGHT,
+    CREEPER_LEG_PIVOT_Y,
+    model_vertical_baseline as _model_vertical_baseline,
+)
 
 SPAWNER_DISPLAY_PITCH = 30.0
+
 
 class ModelQuadruped:
 
@@ -113,10 +119,13 @@ class ModelCow(ModelQuadruped):
         super().__init__(12, inflate)
         self.head = ModelPart(0, 0, -4, -4, -6, 8, 8, 6, inflate=inflate)
         self.head.set_rotation_point(0.0, 4.0, -8.0)
-        self.horn1 = ModelPart(22, 0, -5, -6, -3, 1, 3, 1, inflate=inflate)
-        self.horn1.set_rotation_point(0.0, 4.0, -8.0)
-        self.horn2 = ModelPart(22, 0, 4, -6, -3, 1, 3, 1, inflate=inflate)
-        self.horn2.set_rotation_point(0.0, 4.0, -8.0)
+        self.horn1 = ModelPart(22, 0, -4, -5, -4, 1, 3, 1, inflate=inflate)
+        self.horn1.set_rotation_point(0.0, 3.0, -7.0)
+        self.horn2 = ModelPart(22, 0, 3, -5, -4, 1, 3, 1, inflate=inflate)
+        self.horn2.set_rotation_point(0.0, 3.0, -7.0)
+        self.horn1.set_rotation_point(0.0, -1.0, 1.0)
+        self.horn2.set_rotation_point(0.0, -1.0, 1.0)
+        self.head.children.extend((self.horn1, self.horn2))
         self.udders = ModelPart(52, 0, -2, -3, 0, 4, 6, 2, inflate=inflate)
         self.udders.set_rotation_point(0.0, 14.0, 6.0)
         self.udders.rotate_angle_x = math.pi * 0.5
@@ -155,12 +164,6 @@ class ModelCow(ModelQuadruped):
         super().set_rotation_angles(
             limb_swing, limb_amount, age_in_ticks, net_head_yaw, head_pitch
         )
-        self.horn1.rotate_angle_y = self.head.rotate_angle_y
-        self.horn1.rotate_angle_x = self.head.rotate_angle_x
-        self.horn1.rotate_angle_z = self.head.rotate_angle_z
-        self.horn2.rotate_angle_y = self.head.rotate_angle_y
-        self.horn2.rotate_angle_x = self.head.rotate_angle_x
-        self.horn2.rotate_angle_z = self.head.rotate_angle_z
 
     def render(
         self,
@@ -176,8 +179,6 @@ class ModelCow(ModelQuadruped):
         )
         for part in self.parts:
             part.render(scale)
-        self.horn1.render(scale)
-        self.horn2.render(scale)
         self.udders.render(scale)
 
 
@@ -274,14 +275,14 @@ class ModelCreeper:
         self.headwear.set_rotation_point(0.0, y, 0.0)
         self.body = ModelPart(16, 16, -4, 0, -2, 8, 12, 4)
         self.body.set_rotation_point(0.0, y, 0.0)
-        self.leg1 = ModelPart(0, 16, -2, 0, -2, 4, 6, 4)
-        self.leg1.set_rotation_point(-2.0, 12.0 + y, 4.0)
-        self.leg2 = ModelPart(0, 16, -2, 0, -2, 4, 6, 4)
-        self.leg2.set_rotation_point(2.0, 12.0 + y, 4.0)
-        self.leg3 = ModelPart(0, 16, -2, 0, -2, 4, 6, 4)
-        self.leg3.set_rotation_point(-2.0, 12.0 + y, -4.0)
-        self.leg4 = ModelPart(0, 16, -2, 0, -2, 4, 6, 4)
-        self.leg4.set_rotation_point(2.0, 12.0 + y, -4.0)
+        self.leg1 = ModelPart(0, 16, -2, 0, -2, 4, CREEPER_LEG_HEIGHT, 4)
+        self.leg1.set_rotation_point(-2.0, CREEPER_LEG_PIVOT_Y, 4.0)
+        self.leg2 = ModelPart(0, 16, -2, 0, -2, 4, CREEPER_LEG_HEIGHT, 4)
+        self.leg2.set_rotation_point(2.0, CREEPER_LEG_PIVOT_Y, 4.0)
+        self.leg3 = ModelPart(0, 16, -2, 0, -2, 4, CREEPER_LEG_HEIGHT, 4)
+        self.leg3.set_rotation_point(-2.0, CREEPER_LEG_PIVOT_Y, -4.0)
+        self.leg4 = ModelPart(0, 16, -2, 0, -2, 4, CREEPER_LEG_HEIGHT, 4)
+        self.leg4.set_rotation_point(2.0, CREEPER_LEG_PIVOT_Y, -4.0)
         self.parts = (self.head, self.body, self.leg1, self.leg2, self.leg3, self.leg4)
 
     def set_rotation_angles(
@@ -675,7 +676,9 @@ def render_mob_model(
                        (8.0 + inverse) / 2.0)
 
     glPushMatrix()
-    enable_standard_item_lighting()
+    from game.entities.entity import Entity as _Entity
+    if not getattr(_Entity, "_entity_draw_lighting_batched", False):
+        enable_standard_item_lighting()
     glEnable(GL_NORMALIZE)
     glTranslatef(dx, dy, dz)
     if model_kind == "squid":
@@ -730,7 +733,8 @@ def render_mob_model(
         f3 = (prev_squish + (squish - prev_squish) * partial) / (slime_size * 0.5 + 1.0)
         f4 = 1.0 / (f3 + 1.0)
         glScalef(f4 * slime_size, 1.0 / f4 * slime_size, f4 * slime_size)
-    glTranslatef(0.0, -24.0 * _UNIT - 0.0078125, 0.0)
+    model_baseline = _model_vertical_baseline(model_kind)
+    glTranslatef(0.0, -model_baseline * _UNIT - 0.0078125, 0.0)
 
     _bind_skin(entity)
     try:
@@ -846,7 +850,8 @@ def render_mob_model(
 
     glEnable(GL_CULL_FACE)
     glDisable(GL_NORMALIZE)
-    disable_standard_item_lighting()
+    if not getattr(_Entity, "_entity_draw_lighting_batched", False):
+        disable_standard_item_lighting()
     glColor4f(1.0, 1.0, 1.0, 1.0)
     glPopMatrix()
 

@@ -1,0 +1,124 @@
+{
+  "corruptor_arrow": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "w": "diamond",
+      "x": "golden_apple",
+      "y": "stick",
+      "z": "feather"
+    },
+    "shape": [
+      "wxw",
+      "#y#",
+      "#z#"
+    ],
+    "amount": 8
+  },
+  "corruptor_tnt": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "d": "diamond_block",
+      "t": "tnt"
+    },
+    "shape": [
+      "ddd",
+      "dtd",
+      "ddd"
+    ],
+    "amount": 1
+  },
+  "kinoko": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "t": "tnt",
+      "m": "brown_mushroom",
+      "g": "gunpowder",
+      "s": "sand"
+    },
+    "shape": [
+      "tmt",
+      "tgt",
+      "sts"
+    ],
+    "amount": 1
+  },
+  "kinoko_red_mushroom": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "t": "tnt",
+      "m": "red_mushroom",
+      "g": "gunpowder",
+      "s": "sand"
+    },
+    "shape": [
+      "tmt",
+      "tgt",
+      "sts"
+    ],
+    "amount": 1,
+    "result": "kinoko"
+  },
+  "photon_lamp": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "a": "glass",
+      "r": "redstone",
+      "g": "glowstone_dust",
+      "d": "diamond"
+    },
+    "shape": [
+      "ara",
+      "gdg",
+      "aga"
+    ],
+    "amount": 3
+  },
+  "tesla": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "s": "stone_slab",
+      "g": "gold_ingot",
+      "r": "redstone"
+    },
+    "shape": [
+      "sss",
+      "ggg",
+      "srs"
+    ],
+    "amount": 1
+  },
+  "photobomb": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "g": "glass",
+      "d": "glowstone_dust",
+      "t": "tnt"
+    },
+    "shape": [
+      "ggg",
+      "dtd",
+      "ggg"
+    ],
+    "amount": 1
+  },
+  "magnifying_glass": {
+    "station": "crafting",
+    "shapeless": false,
+    "key": {
+      "g": "glass"
+    },
+    "shape": [
+      "ggg",
+      "g#g",
+      "ggg"
+    ],
+    "amount": 8
+  }
+}

@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import math
 
-MAX_EXPANDED_NODES = 1500
+MAX_EXPANDED_NODES = 400
 
 _NON_SOLID = frozenset({"torch", "fire", "ladder", "rail"})
 _LIQUIDS = frozenset({"water", "lava"})
 
+_ALWAYS_NON_SOLID = _NON_SOLID | {
+    "sapling", "yellow_flower", "red_flower", "brown_mushroom",
+    "red_mushroom", "crops", "snow", "tall_grass", "dead_bush",
+}
 
 _SOLID_TYPE_CACHE = {}
+_PATHFINDER_BY_WORLD = {}
 
 
 def _is_solid_type(block_type) -> bool:
-    if block_type is None or block_type in _NON_SOLID or block_type in _LIQUIDS:
+    if block_type is None or block_type in _ALWAYS_NON_SOLID or block_type in _LIQUIDS:
         return False
     cached = _SOLID_TYPE_CACHE.get(block_type)
     if cached is not None:
@@ -21,12 +26,22 @@ def _is_solid_type(block_type) -> bool:
         from game.block.material import material_for_block
         result = bool(material_for_block(block_type).is_solid)
     except Exception:
-        return block_type not in {
-            "sapling", "yellow_flower", "red_flower", "brown_mushroom",
-            "red_mushroom", "crops",
-        }
+        result = True
     _SOLID_TYPE_CACHE[block_type] = result
     return result
+
+
+def _pathfinder_for(world):
+    key = id(world) if world is not None else 0
+    finder = _PATHFINDER_BY_WORLD.get(key)
+    if finder is None or finder.world is not world:
+        finder = Pathfinder(world)
+        _PATHFINDER_BY_WORLD[key] = finder
+        if len(_PATHFINDER_BY_WORLD) > 8:
+            stale = [k for k, f in _PATHFINDER_BY_WORLD.items() if f.world is not world]
+            for k in stale[: max(0, len(stale) - 4)]:
+                _PATHFINDER_BY_WORLD.pop(k, None)
+    return finder
 
 
 class PathPoint:
@@ -170,14 +185,54 @@ class Pathfinder:
         self.point_map = {}
         self._type_cache = {}
         self.expanded = 0
+        self._chunks = getattr(world, "chunks", None) if world is not None else None
+        self._chunk_height = int(getattr(world, "CHUNK_HEIGHT", 128) or 128)
+        try:
+            from game.world.chunk import Chunk as _Chunk
+            self._chunk_type = _Chunk
+        except Exception:
+            self._chunk_type = None
+
+    def _bind_world(self, world):
+        if world is self.world:
+            return
+        self.world = world
+        self._chunks = getattr(world, "chunks", None) if world is not None else None
+        self._chunk_height = int(getattr(world, "CHUNK_HEIGHT", 128) or 128)
 
     def _block_type(self, x, y, z):
         key = (x, y, z)
         cache = self._type_cache
         if key in cache:
             return cache[key]
-        getter = getattr(self.world, "get_block_type", None)
-        value = getter(x, y, z) if getter is not None else None
+
+        value = None
+        height = self._chunk_height
+        if 0 <= y < height:
+            chunks = self._chunks
+            if chunks is not None:
+                cx = (x + 0.5) // 16
+                cz = (z + 0.5) // 16
+                chunk = chunks.get((cx, cz))
+                if chunk is not None:
+                    chunk_type = self._chunk_type
+                    if chunk_type is not None and type(chunk) is chunk_type:
+                        lx = x - chunk.start_x
+                        lz = z - chunk.start_z
+                        if 0 <= lx < 16 and 0 <= lz < 16:
+                            block_id = chunk.blocks[
+                                (lx * chunk.depth + lz) * chunk.height + y
+                            ]
+                            value = (
+                                chunk._id_to_block_type[block_id]
+                                if block_id else None
+                            )
+                        else:
+                            value = None
+                    else:
+                        getter = getattr(chunk, "get_block_type", None)
+                        value = getter(x, y, z) if getter is not None else None
+
         cache[key] = value
         return value
 
@@ -195,6 +250,8 @@ class Pathfinder:
         self.point_map.clear()
         self._type_cache.clear()
         self.expanded = 0
+        world = self.world
+        self._chunks = getattr(world, "chunks", None) if world is not None else None
         width = float(entity.size[0])
         height = float(entity.size[1])
         half_w = width / 2.0
@@ -291,11 +348,14 @@ class Pathfinder:
         return point
 
     def _vertical_offset(self, x, y, z, size):
-        block_type = self._block_type(x, y, z)
-        if _is_solid_type(block_type):
-            return 0
-        if block_type in _LIQUIDS:
-            return -1
+        for cx in range(x, x + size.x):
+            for cy in range(y, y + size.y):
+                for cz in range(z, z + size.z):
+                    block_type = self._block_type(cx, cy, cz)
+                    if _is_solid_type(block_type):
+                        return 0
+                    if block_type in _LIQUIDS:
+                        return -1
         return 1
 
     @staticmethod
@@ -310,8 +370,12 @@ class Pathfinder:
 
 
 def get_path_to_entity(world, entity, target, max_distance):
-    return Pathfinder(world).create_path_to_entity(entity, target, max_distance)
+    finder = _pathfinder_for(world)
+    finder._bind_world(world)
+    return finder.create_path_to_entity(entity, target, max_distance)
 
 
 def get_path_to_xyz(world, entity, x, y, z, max_distance):
-    return Pathfinder(world).create_path_to_xyz(entity, x, y, z, max_distance)
+    finder = _pathfinder_for(world)
+    finder._bind_world(world)
+    return finder.create_path_to_xyz(entity, x, y, z, max_distance)

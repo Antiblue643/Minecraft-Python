@@ -13,6 +13,7 @@ import pygame as pg
 from OpenGL.GL import (
     GL_ALPHA_TEST,
     GL_BLEND,
+    GL_COMPILE,
     GL_CULL_FACE,
     GL_DEPTH_TEST,
     GL_EQUAL,
@@ -26,17 +27,29 @@ from OpenGL.GL import (
     GL_QUADS,
     GL_SRC_ALPHA,
     GL_TEXTURE_2D,
+    GL_TEXTURE_ENV,
+    GL_TEXTURE_ENV_MODE,
+    GL_MODULATE,
+    GL_ALL_ATTRIB_BITS,
+    glPushAttrib,
+    glPopAttrib,
+    glTexEnvi,
     glAlphaFunc,
     glBegin,
     glBlendFunc,
+    glCallList,
     glColor4f,
+    glDeleteLists,
     glDisable,
     glDepthFunc,
     glEnable,
     glEnd,
+    glEndList,
+    glGenLists,
     glLoadIdentity,
     glMatrixMode,
     glIsEnabled,
+    glNewList,
     glNormal3f,
     glPopMatrix,
     glPushMatrix,
@@ -538,15 +551,39 @@ class ModelPart:
         self.rotate_angle_y = 0.0
         self.rotate_angle_z = 0.0
         self.show_model = True
+        self.children = []
         self.mirror = mirror
         self._faces = self._build_faces(
             tex_u, tex_v, off_x, off_y, off_z, size_x, size_y, size_z,
             inflate, mirror, texture_width, texture_height,
         )
         self._face_normals = [self._normal_for_face(face) for face in self._faces]
+        self._display_list = None
 
     def set_rotation_point(self, x: float, y: float, z: float) -> None:
         self.rotation_point = (x, y, z)
+
+    def _ensure_display_list(self) -> None:
+        if self._display_list is not None:
+            return
+        try:
+            list_id = int(glGenLists(1))
+        except Exception:
+            self._display_list = 0
+            return
+        if list_id == 0:
+            self._display_list = 0
+            return
+        glNewList(list_id, GL_COMPILE)
+        glBegin(GL_QUADS)
+        for face, normal in zip(self._faces, self._face_normals):
+            glNormal3f(*normal)
+            for (x, y, z), (uu, vv) in face:
+                glTexCoord2f(uu, vv)
+                glVertex3f(x, y, z)
+        glEnd()
+        glEndList()
+        self._display_list = list_id
 
     @staticmethod
     def _build_faces(
@@ -646,13 +683,26 @@ class ModelPart:
         if self.rotate_angle_x:
             glRotatef(math.degrees(self.rotate_angle_x), 1.0, 0.0, 0.0)
 
-        glBegin(GL_QUADS)
-        for face, normal in zip(self._faces, self._face_normals):
-            glNormal3f(*normal)
-            for (x, y, z), (uu, vv) in face:
-                glTexCoord2f(uu, vv)
-                glVertex3f(x * scale, y * scale, z * scale)
-        glEnd()
+        self._ensure_display_list()
+        list_id = self._display_list
+        if list_id:
+            if scale != 1.0:
+                glPushMatrix()
+                glScalef(scale, scale, scale)
+                glCallList(list_id)
+                glPopMatrix()
+            else:
+                glCallList(list_id)
+        else:
+            glBegin(GL_QUADS)
+            for face, normal in zip(self._faces, self._face_normals):
+                glNormal3f(*normal)
+                for (x, y, z), (uu, vv) in face:
+                    glTexCoord2f(uu, vv)
+                    glVertex3f(x * scale, y * scale, z * scale)
+            glEnd()
+        for child in self.children:
+            child.render(scale)
         glPopMatrix()
 
 
@@ -1044,8 +1094,11 @@ def _has_held_item(player) -> bool:
 
 
 def _apply_player_pose(model, player, partial: float) -> None:
-    model.swing_progress = _player_swing_progress(player, partial)
-    model.held_item_right = _has_held_item(player)
+    sleeping = bool(getattr(player, "is_sleeping", False))
+    model.swing_progress = 0.0 if sleeping else _player_swing_progress(player, partial)
+    model.held_item_right = (
+        should_render_player_held_item(player) and _has_held_item(player)
+    )
 
 
 def _view_bob_values(player, partial: float):
@@ -1073,6 +1126,10 @@ def _apply_view_bobbing(player, partial: float) -> None:
     glRotatef(abs(math.cos(phase + 0.2) * camera_yaw) * 5.0,
               1.0, 0.0, 0.0)
     glRotatef(camera_pitch, 1.0, 0.0, 0.0)
+
+
+def apply_view_bobbing(player, partial: float = 0.0) -> None:
+    _apply_view_bobbing(player, partial)
 
 
 def apply_hurt_camera_effect(player, partial: float = 0.0) -> None:
@@ -1132,7 +1189,7 @@ def _held_block_uses_3d(defn) -> bool:
 
 
 def _held_item_uses_3d_block(item_id, item_api) -> bool:
-    if item_id == "cake":
+    if item_id in ("cake", "bed", "redstone_repeater"):
         return False
     definition = getattr(item_api, "block_defs", {}).get(item_id)
     return bool(
@@ -1143,6 +1200,8 @@ def _held_item_uses_3d_block(item_id, item_api) -> bool:
 
 
 def _render_third_person_held_item(player, model, brightness: float) -> None:
+    if not should_render_player_held_item(player):
+        return
     pushed = False
     try:
         from game.entities.item import Item
@@ -1172,7 +1231,7 @@ def _render_third_person_held_item(player, model, brightness: float) -> None:
         glTranslatef(-1.0 * _UNIT, 7.0 * _UNIT, 1.0 * _UNIT)
         glColor4f(brightness, brightness, brightness, 1.0)
 
-        is_block = held.id in getattr(Item, "block_defs", {}) and held.id != "cake"
+        is_block = held.id in getattr(Item, "block_defs", {}) and held.id not in ("cake", "bed", "redstone_repeater")
         defn = Item.block_defs.get(held.id) if is_block else None
         use_3d_block = (
             is_block and _held_block_uses_3d(defn)
@@ -1356,6 +1415,9 @@ def render_player_model(
     yaw = float(player.yaw if head_yaw is None else head_yaw)
     pitch = float(player.pitch if head_pitch is None else head_pitch)
     limb_swing, limb_amount, age = _player_anim(player, partial)
+    if bool(getattr(player, "is_sleeping", False)):
+        limb_swing = 0.0
+        limb_amount = 0.0
 
     net_head = body_yaw - yaw
     while net_head < -180.0:
@@ -1365,7 +1427,9 @@ def render_player_model(
 
     model = _get_main_model()
     glPushMatrix()
-    enable_standard_item_lighting()
+    from game.entities.entity import Entity as _Entity
+    if not getattr(_Entity, "_entity_draw_lighting_batched", False):
+        enable_standard_item_lighting()
     glEnable(GL_NORMALIZE)
     glTranslatef(dx, dy, dz)
     glRotatef(body_yaw, 0.0, 1.0, 0.0)
@@ -1373,6 +1437,9 @@ def render_player_model(
     if death_time > 0.0:
         death_progress = max(0.0, min(1.0, ((death_time + partial - 1.0) / 20.0 * 1.6) ** 0.5))
         glRotatef(death_progress * 90.0, 0.0, 0.0, 1.0)
+    elif bool(getattr(player, "is_sleeping", False)):
+        glRotatef(90.0, 0.0, 0.0, 1.0)
+        glRotatef(270.0, 0.0, 1.0, 0.0)
     glScalef(-1.0, -1.0, 1.0)
     glScalef(_PLAYER_SCALE, _PLAYER_SCALE, _PLAYER_SCALE)  
     glTranslatef(0.0, -24.0 * _UNIT - 0.0078125, 0.0)
@@ -1434,7 +1501,8 @@ def render_player_model(
         glEnable(GL_TEXTURE_2D)
     glEnable(GL_CULL_FACE)
     glDisable(GL_NORMALIZE)
-    disable_standard_item_lighting()
+    if not getattr(_Entity, "_entity_draw_lighting_batched", False):
+        disable_standard_item_lighting()
     glColor4f(1.0, 1.0, 1.0, 1.0)
     glPopMatrix()
 
@@ -1649,7 +1717,14 @@ def _draw_held_sprite(held, brightness=1.0):
     tex = None
     atlas_idx = 0
     is_block = held.id in getattr(Item, "block_defs", {})
-    if (held.id in getattr(Item, "item_defs", {})
+    if held.id in ("redstone_repeater", "bed"):
+        block_item = Item.block_defs.get(held.id, {}).get("blockitem", {})
+        item_def = Item.item_defs.get(held.id, {})
+        atlas_idx = item_def.get("texture", block_item.get("texture"))
+        tex = Item.item_texture
+        if atlas_idx is None or tex is None:
+            return
+    elif (held.id in getattr(Item, "item_defs", {})
             and "texture" in Item.item_defs[held.id] and Item.item_texture is not None):
         defn = Item.item_defs[held.id]
         atlas_idx = Item.icon_texture(held.id, getattr(held, "damage", 0))
@@ -1736,6 +1811,7 @@ def _draw_held_stairs(player, held, brightness=1.0):
         defn["bounds"] = old_bounds
 
 
+
 def _draw_held_block_cube(player, held, brightness=1.0):
     try:
         from game.entities.item import Item
@@ -1746,7 +1822,11 @@ def _draw_held_block_cube(player, held, brightness=1.0):
     defn = Item.block_defs.get(held.id)
     if not defn:
         return
-    faces = Item.block_faces(held.id, getattr(held, "damage", 0))
+    damage = getattr(held, "damage", 0)
+    faces = Item.block_faces(held.id, damage)
+    def face_tint_rgb(slot):
+        tint = Item.block_item_tint(held.id, damage, slot=slot)
+        return tuple(channel / 255.0 for channel in tint)
 
     def face_idx(slot):
         if isinstance(faces, list):
@@ -1754,14 +1834,12 @@ def _draw_held_block_cube(player, held, brightness=1.0):
         return faces
 
     if isinstance(faces, list) and len(faces) >= 6:
-        tex_top = faces[3]
-        tex_bottom = faces[2]
-        tex_px = faces[0]
-        tex_nx = faces[1] if len(faces) > 1 else faces[0]
-        tex_pz = faces[4] if len(faces) > 4 else faces[0]
-        tex_nz = faces[5] if len(faces) > 5 else faces[0]
-        if held.id == "grass_block":
-            tex_top = faces[0]
+        tex_top = Item.block_face_texture(held.id, 3, damage)
+        tex_bottom = Item.block_face_texture(held.id, 2, damage)
+        tex_px = Item.block_face_texture(held.id, 0, damage)
+        tex_nx = Item.block_face_texture(held.id, 1, damage)
+        tex_pz = Item.block_face_texture(held.id, 4, damage)
+        tex_nz = Item.block_face_texture(held.id, 5, damage)
     elif isinstance(faces, list) and len(faces) >= 3:
         tex_top = faces[2]
         tex_bottom = faces[2]
@@ -1776,60 +1854,67 @@ def _draw_held_block_cube(player, held, brightness=1.0):
         x0, y0, z0, x1, y1, z1 = 0.0, 0.0, 0.0, 1.0, 1.0, 1.0
 
     tex = Item.block_texture
-    glEnable(GL_TEXTURE_2D)
-    tex.bind()
-    _blend_was_on = bool(glIsEnabled(GL_BLEND))
-    glEnable(GL_BLEND)
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    glPushAttrib(GL_ALL_ATTRIB_BITS)
+    try:
+        glEnable(GL_TEXTURE_2D)
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+        tex.bind()
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-    def face_uv(atlas_idx, x, y, z, face):
-        u0, v0, u1, v1 = _atlas_uv(atlas_idx)
-        if face == "+x":
-            uf, vf = 1.0 - z, y
-        elif face == "-x":
-            uf, vf = z, y
-        elif face == "+z":
-            uf, vf = x, y
-        elif face == "-z":
-            uf, vf = 1.0 - x, y
-        elif face == "+y":
-            uf, vf = x, 1.0 - z
-        else:  
-            uf, vf = x, 1.0 - z
-        return u0 + (u1 - u0) * uf, v0 + (v1 - v0) * vf
+        def face_uv(atlas_idx, x, y, z, face):
+            u0, v0, u1, v1 = _atlas_uv(atlas_idx)
+            if face == "+x":
+                uf, vf = 1.0 - z, y
+            elif face == "-x":
+                uf, vf = z, y
+            elif face == "+z":
+                uf, vf = x, y
+            elif face == "-z":
+                uf, vf = 1.0 - x, y
+            elif face == "+y":
+                uf, vf = x, 1.0 - z
+            else:
+                uf, vf = x, 1.0 - z
+            return u0 + (u1 - u0) * uf, v0 + (v1 - v0) * vf
 
-    def quad(atlas_idx, verts, normal, face, shade=1.0):
-        glColor4f(shade * brightness, shade * brightness, shade * brightness, 1.0)
-        glBegin(GL_QUADS)
-        glNormal3f(*normal)
-        for x, y, z in verts:
-            u, v = face_uv(atlas_idx, x, y, z, face)
-            glTexCoord2f(u, v)
-            glVertex3f(x, y, z)
-        glEnd()
+        def quad(atlas_idx, verts, normal, face, slot, shade=1.0):
+            tint_rgb = face_tint_rgb(slot)
+            glColor4f(
+                shade * brightness * tint_rgb[0],
+                shade * brightness * tint_rgb[1],
+                shade * brightness * tint_rgb[2],
+                1.0,
+            )
+            glBegin(GL_QUADS)
+            glNormal3f(*normal)
+            for x, y, z in verts:
+                u, v = face_uv(atlas_idx, x, y, z, face)
+                glTexCoord2f(u, v)
+                glVertex3f(x, y, z)
+            glEnd()
 
-    quad(tex_top,
-         [(x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1)],
-         (0, 1, 0), "+y", 1.0)
-    quad(tex_bottom,
-         [(x0, y0, z1), (x1, y0, z1), (x1, y0, z0), (x0, y0, z0)],
-         (0, -1, 0), "-y", 0.5)
-    quad(tex_pz,
-         [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)],
-         (0, 0, 1), "+z", 0.8)
-    quad(tex_nz,
-         [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)],
-         (0, 0, -1), "-z", 0.8)
-    quad(tex_px,
-         [(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)],
-         (1, 0, 0), "+x", 0.6)
-    quad(tex_nx,
-         [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)],
-         (-1, 0, 0), "-x", 0.6)
-    tex.unbind()
-    if not _blend_was_on:
-        glDisable(GL_BLEND)
-
+        quad(tex_top,
+             [(x0, y1, z0), (x1, y1, z0), (x1, y1, z1), (x0, y1, z1)],
+             (0, 1, 0), "+y", 3, 1.0)
+        quad(tex_bottom,
+             [(x0, y0, z1), (x1, y0, z1), (x1, y0, z0), (x0, y0, z0)],
+             (0, -1, 0), "-y", 2, 0.5)
+        quad(tex_pz,
+             [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)],
+             (0, 0, 1), "+z", 4, 0.8)
+        quad(tex_nz,
+             [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)],
+             (0, 0, -1), "-z", 5, 0.8)
+        quad(tex_px,
+             [(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)],
+             (1, 0, 0), "+x", 0, 0.6)
+        quad(tex_nx,
+             [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)],
+             (-1, 0, 0), "-x", 1, 0.6)
+    finally:
+        tex.unbind()
+        glPopAttrib()
 
 
 def _draw_held_item(player, brightness=1.0, held=None):
@@ -1840,7 +1925,7 @@ def _draw_held_item(player, brightness=1.0, held=None):
     except Exception:
         return
 
-    is_block = held.id in getattr(Item, "block_defs", {}) and held.id != "cake"
+    is_block = held.id in getattr(Item, "block_defs", {}) and held.id not in ("cake", "bed", "redstone_repeater")
     defn = Item.block_defs.get(held.id) if is_block else None
 
     if _held_item_uses_3d_block(held.id, Item):
@@ -1856,7 +1941,6 @@ def _draw_held_item(player, brightness=1.0, held=None):
         return
 
     _draw_held_sprite(held, brightness=brightness)
-
 
 def _player_render_brightness(player) -> float:
     world = getattr(player, "world", None)
@@ -1921,7 +2005,7 @@ def inside_opaque_block_texture(player, world=None) -> Optional[int]:
     if (definition.get("model", "cube") != "cube"
             or not is_full_cube
             or definition.get("transparent", False)
-            or definition.get("intangible", False)
+            or definition.get("collision", True) is False
             or int(definition.get("lightOpacity", 255)) < 255):
         return None
 
@@ -1936,9 +2020,17 @@ def inside_opaque_block_texture(player, world=None) -> Optional[int]:
         return None
 
 
+from game.player_pose import (
+    should_render_first_person_hand,
+    should_render_player_held_item,
+)
+
+
 def render_first_person_hand(
     player, partial: float = 0.0, *, inventory_open: bool = False
 ) -> None:
+    if not should_render_first_person_hand(player):
+        return
     swing = 0.0 if inventory_open else _player_swing_progress(player, partial)
 
     equipped = float(getattr(player, "equipped_progress", 1.0))

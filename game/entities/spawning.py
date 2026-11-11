@@ -30,14 +30,14 @@ def _java_chunk_order(cells):
 
 
 class NaturalMobSpawner:
-    CHUNK_RADIUS = 4
-    PASSES_PER_TICK = 3
-    MIN_DISTANCE_SQ = 576.0  
+    CHUNK_RADIUS = 8
+    PASSES_PER_TICK = 1
+    MIN_DISTANCE_SQ = 576.0
 
     def __init__(
         self, max_spawns, entity_types, *, monsters=False, count_type=None,
         chunk_radius=None, passes_per_tick=None, chunk_chance=10,
-        group_hops=2, uniform_spawn_height=False, scale_spawn_cap=False,
+        group_hops=2, uniform_spawn_height=False, scale_spawn_cap=True,
     ):
         self.max_spawns = int(max_spawns)
         self.count_type = count_type
@@ -108,10 +108,18 @@ class NaturalMobSpawner:
             float(getattr(world, "spawn_z", 0)),
         )
 
-    def _perform_spawning(self, world, player, rng) -> int:
+    def _perform_spawning(
+        self, world, player, rng, eligible_chunks=None, players=None, spawn_limit=None,
+    ) -> int:
         spawned = 0
         spawn_x, spawn_y, spawn_z = self._spawn_point(world)
-        for chunk_x, chunk_z in self._eligible_chunks(world, player):
+        spawn_players = tuple(players or (player,))
+        chunks = self._eligible_chunks(world, player) if eligible_chunks is None else eligible_chunks
+        limit = None if spawn_limit is None else max(0, int(spawn_limit))
+
+        for chunk_x, chunk_z in chunks:
+            if limit is not None and spawned >= limit:
+                break
             if not self._is_loaded(world, chunk_x * 16, chunk_z * 16):
                 continue
             if self._next_int(rng, self.chunk_chance) != 0:
@@ -127,8 +135,12 @@ class NaturalMobSpawner:
             group_limit = max(1, int(getattr(entity_type, "MAX_SPAWN_GROUP", 4)))
             group_limit_reached = False
             for _ in range(3):
+                if limit is not None and spawned >= limit:
+                    break
                 hx, hy, hz = x, y, z
                 for _ in range(self.group_hops):
+                    if limit is not None and spawned >= limit:
+                        break
                     hx += self._next_int(rng, 6) - self._next_int(rng, 6)
                     hy += self._next_int(rng, 1) - self._next_int(rng, 1)
                     hz += self._next_int(rng, 6) - self._next_int(rng, 6)
@@ -141,10 +153,15 @@ class NaturalMobSpawner:
                     if not self._is_loaded(world, hx, hz):
                         continue
                     fx, fy, fz = float(hx), hy - 0.5, float(hz)
-                    dx = fx - float(player.pos[0])
-                    dy = fy - float(player.pos[1])
-                    dz = fz - float(player.pos[2])
-                    if dx * dx + dy * dy + dz * dz < self.MIN_DISTANCE_SQ:
+                    too_close = False
+                    for other_player in spawn_players:
+                        dx = fx - float(other_player.pos[0])
+                        dy = fy - float(other_player.pos[1])
+                        dz = fz - float(other_player.pos[2])
+                        if dx * dx + dy * dy + dz * dz < self.MIN_DISTANCE_SQ:
+                            too_close = True
+                            break
+                    if too_close:
                         continue
                     sx = hx + 0.5 - spawn_x
                     sy = hy - spawn_y
@@ -166,22 +183,24 @@ class NaturalMobSpawner:
                         from game.entities.spider import Spider
                         from game.entities.skeleton import Skeleton
                         if isinstance(entity, Spider) and self._next_int(rng, 100) == 0:
-                            skeleton = Skeleton((fx, fy, fz), yaw=entity.yaw, rng=rng)
-                            skeleton.yaw = entity.yaw
-                            world.spawn_entity(skeleton)
-                            mount = getattr(entity, "mount_rider", None)
-                            if callable(mount):
-                                mount(skeleton)
-                            else:
-                                entity.rider = skeleton
-                                skeleton.riding_entity = entity
-                                position = getattr(entity, "_position_rider", None)
-                                if callable(position):
-                                    position()
+                            if limit is None or spawned < limit:
+                                skeleton = Skeleton((fx, fy, fz), yaw=entity.yaw, rng=rng)
+                                skeleton.yaw = entity.yaw
+                                world.spawn_entity(skeleton)
+                                spawned += 1
+                                mount = getattr(entity, "mount_rider", None)
+                                if callable(mount):
+                                    mount(skeleton)
+                                else:
+                                    entity.rider = skeleton
+                                    skeleton.riding_entity = entity
+                                    position = getattr(entity, "_position_rider", None)
+                                    if callable(position):
+                                        position()
                         if spawned_in_chunk >= group_limit:
                             group_limit_reached = True
                             break
-                if group_limit_reached:
+                if group_limit_reached or (limit is not None and spawned >= limit):
                     break
         return spawned
 
@@ -198,42 +217,66 @@ class NaturalMobSpawner:
 
     def update(self, world, rng):
         if bool(getattr(world, "_multiplayer_client_world", False)):
-            return
-        player = getattr(world, "player", None)
+            return 0
         if not self.entity_types:
-            return
+            return 0
 
-        players = [player] if player is not None else []
+        players = []
+        known_positions = set()
+        player = getattr(world, "player", None)
+        if player is not None:
+            try:
+                position = tuple(float(player.pos[index]) for index in range(3))
+                if all(math.isfinite(value) for value in position):
+                    players.append(player)
+                    known_positions.add(position)
+            except (IndexError, TypeError, ValueError, OverflowError):
+                pass
         for pos in getattr(world, "_mp_remote_player_positions", ()) or ():
             try:
                 xyz = tuple(float(pos[index]) for index in range(3))
             except (IndexError, TypeError, ValueError, OverflowError):
                 continue
-            if not all(math.isfinite(value) for value in xyz):
+            if not all(math.isfinite(value) for value in xyz) or xyz in known_positions:
                 continue
-            chunk = self._chunk_of(world, xyz[0], xyz[2])
-            if any(self._chunk_of(world, float(p.pos[0]), float(p.pos[2])) == chunk for p in players):
-                continue
+            known_positions.add(xyz)
             players.append(SimpleNamespace(pos=xyz))
 
         if not players:
-            return
+            return 0
+
+        eligible_set = set()
+        for spawn_player in players:
+            eligible_set.update(self._eligible_chunks(world, spawn_player))
+        eligible = _java_chunk_order(eligible_set)
+        if not eligible:
+            return 0
+
+        spawn_cap = self.max_spawns
+        if self.scale_spawn_cap:
+            spawn_cap = self.max_spawns * len(eligible) // 256
+        if spawn_cap <= 0:
+            return 0
 
         count_type = self.count_type or self.entity_types[0].__mro__[1]
-        for spawn_player in players:
-            eligible = self._eligible_chunks(world, spawn_player)
-            spawn_cap = self.max_spawns
-            if self.scale_spawn_cap:
-                spawn_cap = max(1, self.max_spawns * len(eligible) // 256)
-            for _ in range(self.passes_per_tick):
-                current = sum(
-                    1 for entity in getattr(world, "entities", ())
-                    if isinstance(entity, count_type)
-                    and not getattr(entity, "dead", False)
-                )
-                if current >= spawn_cap:
-                    return
-                self._perform_spawning(world, spawn_player, rng)
+        current = sum(
+            1 for entity in getattr(world, "entities", ())
+            if isinstance(entity, count_type) and not getattr(entity, "dead", False)
+        )
+        remaining = spawn_cap - current
+        if remaining <= 0:
+            return 0
+
+        total_spawned = 0
+        for _ in range(self.passes_per_tick):
+            if remaining <= 0:
+                break
+            added = self._perform_spawning(
+                world, players[0], rng, eligible, players, remaining,
+            )
+            total_spawned += added
+            remaining -= added
+        return total_spawned
 
 
 class NaturalWaterMobSpawner:
@@ -257,7 +300,7 @@ class NaturalWaterMobSpawner:
         if block is None:
             return False
         if getattr(block, "opaque", None) is not None:
-            return bool(block.opaque) and not bool(getattr(block, "intangible", False))
+            return bool(block.opaque) and getattr(block, "collision", True) is not False
         return is_normal_cube(Block._block_defs.get(block_type))
 
     @staticmethod
@@ -276,7 +319,7 @@ class NaturalWaterMobSpawner:
             players.append(SimpleNamespace(pos=xyz))
         return players
 
-    def _try_chunk(self, world, players, chunk_x, chunk_z, rng):
+    def _try_chunk(self, world, players, chunk_x, chunk_z, rng, spawn_limit=None):
         if not NaturalMobSpawner._is_loaded(world, chunk_x * 16, chunk_z * 16):
             return 0
         next_int = NaturalMobSpawner._next_int
@@ -294,8 +337,12 @@ class NaturalWaterMobSpawner:
         spawn_y = float(getattr(world, "spawn_y", 64.0))
         spawn_z = float(getattr(world, "spawn_z", 0.0))
         for _group in range(3):
+            if spawn_limit is not None and spawned_in_group >= spawn_limit:
+                return spawned_in_group
             hx, hy, hz = x, y, z
             for _hop in range(4):
+                if spawn_limit is not None and spawned_in_group >= spawn_limit:
+                    return spawned_in_group
                 hx += next_int(rng, 6) - next_int(rng, 6)
                 hz += next_int(rng, 6) - next_int(rng, 6)
                 if world.get_block_type(hx, hy, hz) not in ("water", "flowing_water"):
@@ -345,12 +392,17 @@ class NaturalWaterMobSpawner:
             1 for entity in getattr(world, "entities", ())
             if isinstance(entity, self.entity_type) and not getattr(entity, "dead", False)
         )
-        if count > cap:
+        if count >= cap:
             return 0
 
         total_spawned = 0
+        remaining = cap - count
         for cx, cz in eligible:
-            total_spawned += self._try_chunk(world, players, cx, cz, rng)
+            if remaining <= 0:
+                break
+            added = self._try_chunk(world, players, cx, cz, rng, remaining)
+            total_spawned += added
+            remaining -= added
         return total_spawned
 
 
@@ -393,10 +445,15 @@ def spawn_natural_mobs(world, rng):
 
         spawners = _SPAWNERS["alpha"] = (
             NaturalMobSpawner(
-                200, (Zombie, Skeleton, Creeper, Spider, Slime), monsters=True,
-                count_type=IMobs,
+                70, (Zombie, Skeleton, Creeper, Spider, Slime), monsters=True,
+                count_type=IMobs, chunk_radius=8, passes_per_tick=1,
+                chunk_chance=10, group_hops=2, scale_spawn_cap=True,
             ),
-            NaturalMobSpawner(20, (Sheep, Pig, Cow, Chicken), count_type=Animal),
+            NaturalMobSpawner(
+                15, (Sheep, Pig, Cow, Chicken), count_type=Animal,
+                chunk_radius=8, passes_per_tick=1, chunk_chance=10,
+                group_hops=2, scale_spawn_cap=True,
+            ),
             NaturalWaterMobSpawner(Squid),
         )
     for spawner in spawners:

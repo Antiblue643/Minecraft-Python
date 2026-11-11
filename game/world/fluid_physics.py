@@ -451,6 +451,23 @@ class FluidTickScheduler:
         heapq.heappush(self._heap, (due, next(self._counter), x, y, z, fluid_type))
         return True
 
+    def shift_world_time(self, delta):
+        delta = int(delta)
+        if not delta:
+            return 0
+        if self._pending:
+            self._pending = {
+                key: (due + delta, fluid_type)
+                for key, (due, fluid_type) in self._pending.items()
+            }
+        if self._heap:
+            self._heap = [
+                (due + delta, serial, x, y, z, fluid_type)
+                for due, serial, x, y, z, fluid_type in self._heap
+            ]
+            heapq.heapify(self._heap)
+        return len(self._pending)
+
     def _loaded_area(self, x, z):
         chunks = getattr(self.world, "chunks", None)
         if not isinstance(chunks, dict):

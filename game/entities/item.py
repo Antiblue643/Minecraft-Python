@@ -94,15 +94,47 @@ class Item:
         return definition.get("faces", 0) if default is None else default
 
     @classmethod
+    def block_face_texture(cls, item_id, slot, damage=0):
+        faces = cls.block_faces(item_id, damage)
+        if isinstance(faces, (list, tuple)):
+            if not faces:
+                return 0
+            index = int(slot)
+            return faces[index] if 0 <= index < len(faces) else faces[0]
+        return faces
+
+    @classmethod
+    def block_item_tint(cls, item_id, damage=0, slot=None):
+        if item_id == "grass_block":
+            if slot is not None and int(slot) != 3:
+                return (255, 255, 255)
+            return (127, 178, 56)
+        if item_id != "leaves":
+            return (255, 255, 255)
+        meta = int(damage or 0) & 3
+        if meta & 1:
+            return (97, 153, 97)
+        if meta & 2:
+            return (128, 167, 85)
+        return (89, 174, 48)
+
+    @classmethod
     def translation_key(cls, item_id):
         is_block = cls.is_block(item_id)
-        namespace = "tile" if is_block else "item"
+        namespace = (
+            "item" if item_id in cls.ITEM_NAMED_BLOCKS
+            else "tile" if is_block else "item"
+        )
         definition = (
             cls.block_defs.get(item_id, {}) if is_block
             else cls.item_defs.get(item_id, {})
         )
         java_name = definition.get("javaName", item_id)
         return f"{namespace}.{java_name}"
+
+    ITEM_NAMED_BLOCKS = frozenset({"redstone_repeater", "redstone_repeater_on"})
+
+    SLAB_TYPES = ("stone", "sand", "wood", "cobble")
 
     DYE_COLORS = (
         "black", "red", "green", "brown", "blue", "purple", "cyan", "silver",
@@ -116,6 +148,8 @@ class Item:
             return f"tile.cloth.{cls.DYE_COLORS[~damage & 15]}"
         if item_id == "dye":
             return f"item.dyePowder.{cls.DYE_COLORS[damage & 15]}"
+        if item_id == "stone_slab":
+            return f"tile.stoneSlab.{cls.SLAB_TYPES[damage & 3]}"
         if item_id == "coal" and damage == 1:
             return "item.charcoal"
         return cls.translation_key(item_id)
@@ -132,6 +166,29 @@ class Item:
         return translate_mod(
             str(mod_id), f"{namespace}.{item_id}.{suffix}", default=default,
         )
+
+    _mod_title_cache = None
+
+    @classmethod
+    def mod_name(cls, item_id):
+        definition = cls.definition(item_id)
+        mod_id = definition.get("mod_id") if isinstance(definition, dict) else None
+        if not mod_id:
+            return None
+        mod_id = str(mod_id)
+        if cls._mod_title_cache is None:
+            try:
+                from game.app.mods import discover_external_mods
+                cls._mod_title_cache = {
+                    mod.identifier: mod.title for mod in discover_external_mods()
+                }
+            except Exception:
+                cls._mod_title_cache = {}
+        from game.localization import translate_mod
+        name = translate_mod(
+            mod_id, "mod.name", default=cls._mod_title_cache.get(mod_id, mod_id),
+        )
+        return name or None
 
     @classmethod
     def display_name(cls, item_id, damage=0):
@@ -270,7 +327,8 @@ class ItemEntity(ItemRendererMixin, Entity):
         self._collector = None
         self._draw_brightness = 1.0
 
-        block_def = Item.block_defs.get(stack.id, {})
+        placed_block = Item.placed_block(stack.id)
+        block_def = Item.block_defs.get(placed_block or stack.id, {})
         self._is_pressure_plate = (
             stack.id in Item.block_defs and block_def.get("model") == "pressure_plate"
         )
@@ -289,8 +347,11 @@ class ItemEntity(ItemRendererMixin, Entity):
         self._is_fence = (
             stack.id in Item.block_defs and block_def.get("model") == "fence"
         )
+        self._is_slab = (
+            stack.id in Item.block_defs and block_def.get("model") == "slab"
+        )
         self._is_block = (
-            stack.id != "cake"
+            stack.id not in ("cake", "bed")
             and stack.id in Item.block_defs
             and block_def.get("model", "cube") == "cube"
         )
@@ -466,6 +527,6 @@ class ItemEntity(ItemRendererMixin, Entity):
         return (
             d.get("model", "cube") == "cube"
             and d.get("nCull", "all") == "all"
-            and not d.get("intangible", False)
+            and d.get("collision", True) is not False
             and not d.get("transparent", False)
         )

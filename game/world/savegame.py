@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import os
+import re
 import threading
 import time
 import uuid
@@ -10,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, wait
 NBTLIB_VERSION = "1.12.1"
 
 
+from game.world.regionfile import RegionFileCache
 from game.content_ids import (
     CLASSIC_BLOCK_NAME_TO_ID,
     CLASSIC_BLOCK_ID_TO_NAME,
@@ -320,12 +323,46 @@ def _vector(compound, key, length, cast=float, defaults=None):
     return list(defaults)
 
 
+MCREGION_SAVE_VERSION = 19132
+LEGACY_CHUNK_BACKUP_DIR = "alpha_chunks_backup"
+_LEGACY_DIR_RE = re.compile(r"^[0-9a-z]+$")
+_LEGACY_FILE_RE = re.compile(r"^c\.(-?[0-9a-z]+)\.(-?[0-9a-z]+)\.dat$")
+
+
+def _parse_nbt_bytes(nbtlib, raw):
+    return nbtlib.File.parse(io.BytesIO(raw))
+
+
+def _nbt_file_to_bytes(nbt_file):
+    buffer = io.BytesIO()
+    nbt_file.write(buffer)
+    return buffer.getvalue()
+
+
+def _validate_nbt_bytes(nbtlib, raw, root_key, *, expected_blocks=None):
+    check = _parse_nbt_bytes(nbtlib, raw)
+    root_view = check
+    if "" in check and root_key not in check:
+        root_view = check[""]
+    if not hasattr(root_view, "get") or root_key not in root_view:
+        raise ValueError(f"chunk NBT has no root-level {root_key!r} compound; refusing to store it")
+    compound = root_view[root_key]
+    if not hasattr(compound, "get"):
+        raise ValueError(f"chunk NBT root {root_key!r} is not a compound")
+    if expected_blocks is not None:
+        blocks = compound.get("Blocks")
+        if blocks is None or len(blocks) != expected_blocks:
+            actual = None if blocks is None else len(blocks)
+            raise ValueError(f"chunk Blocks array has length {actual}, expected {expected_blocks}")
+
+
 class WorldSave:
 
     def __init__(self, save_dir):
         _nbtlib()
         self.root = Path(save_dir).expanduser().resolve()
         self.level_data = self.load_level()
+        self._region_cache = RegionFileCache(self.root)
         self._write_executor = None
         self._pending_save_records = []
         self._pending_by_key = {}
@@ -366,6 +403,7 @@ class WorldSave:
                 player = self._decode_player(player_tag) if player_tag is not None else None
                 return {
                     "RandomSeed": _as_int(data, "RandomSeed"),
+                    "LevelName": str(data.get("LevelName", "") or ""),
                     "SpawnX": _as_int(data, "SpawnX"),
                     "SpawnY": _as_int(data, "SpawnY", 64),
                     "SpawnZ": _as_int(data, "SpawnZ"),
@@ -374,7 +412,7 @@ class WorldSave:
                     "SnowCovered": bool(_as_int(data, "SnowCovered")),
                     "DebugWorld": bool(_as_int(data, "DebugWorld")),
                     "McpyAccurateGeneration": bool(
-                        _as_int(data, "McpyAccurateGeneration", 1)
+                        _as_int(data, "McpyAccurateGeneration", 0)
                     ),
                     "Player": player,
                 }
@@ -390,16 +428,36 @@ class WorldSave:
             ) from last_error
         return None
 
+    def _regions(self):
+        cache = getattr(self, "_region_cache", None)
+        if cache is None:
+            cache = self._region_cache = RegionFileCache(self.root)
+        return cache
+
     def chunk_exists(self, cx, cz):
-        return self.chunk_path(cx, cz).is_file()
+        return self._regions().has_chunk(cx, cz) or self.chunk_path(cx, cz).is_file()
+
+    def _delete_saved_chunk(self, cx, cz):
+        self._regions().delete_chunk(cx, cz)
+        path = self.chunk_path(cx, cz)
+        try:
+            if path.is_file():
+                path.unlink()
+        except OSError:
+            pass
 
     def load_chunk(self, cx, cz):
         path = self.chunk_path(cx, cz)
-        if not path.is_file():
+        region_bytes = self._regions().read_chunk(cx, cz)
+        if region_bytes is None and not path.is_file():
             return None
         try:
             nbtlib, tag = _tag_types()
-            root = _load_nbt_file(nbtlib, path)
+            if region_bytes is not None:
+                root = _parse_nbt_bytes(nbtlib, region_bytes)
+                path = self._regions().region_dir / f"region chunk {cx},{cz}"
+            else:
+                root = _load_nbt_file(nbtlib, path)
             level = _find_named_compound(root, "Level")
             if level is None:
                 if all(key in root for key in ("xPos", "zPos", "Blocks")):
@@ -453,6 +511,15 @@ class WorldSave:
                     })
                 except Exception:
                     continue
+            tile_ticks = []
+            for entry in level.get("McpyTileTicks", []):
+                try:
+                    tile_ticks.append((
+                        _as_int(entry, "X"), _as_int(entry, "Y"), _as_int(entry, "Z"),
+                        str(entry["Block"]), max(0, _as_int(entry, "Delay")),
+                    ))
+                except Exception:
+                    continue
             return {
                 "xPos": x_pos, "zPos": z_pos,
                 "LastUpdate": _as_int(level, "LastUpdate"),
@@ -467,12 +534,19 @@ class WorldSave:
                 "TerrainPopulated": bool(_as_int(level, "TerrainPopulated")),
                 "block_names": block_names, "entities": [e for e in entities if e], "tile_entities": tile_entities,
                 "door_hinges": door_hinges, "door_partners": door_partners,
+                "tile_ticks": tile_ticks,
             }
         except RuntimeError:
             raise
         except Exception as exc:
             print(f"Could not read chunk {cx},{cz} from {path}: {exc}")
             return None
+
+    def _legacy_chunk_files(self):
+        return legacy_chunk_files(self.root)
+
+    def convert_legacy_chunks(self, progress=None):
+        return convert_legacy_chunk_dir(self.root, progress, regions=self._regions())
 
     @staticmethod
     def _persistent_entity_types():
@@ -630,12 +704,7 @@ class WorldSave:
             has_blocks = any(chunk.blocks)
             self._record_save_gate_timing(world, "empty_check", started)
         if not has_tile_entities and not has_items and not has_blocks:
-            path = self.chunk_path(chunk.cx, chunk.cz)
-            try:
-                if path.is_file():
-                    path.unlink()
-            except OSError:
-                pass
+            self._delete_saved_chunk(chunk.cx, chunk.cz)
             chunk.mark_saved_state(world, fingerprint=chunk.fingerprint(), entity_count=0)
             return True
         return self.save_chunk(world, chunk)
@@ -713,6 +782,19 @@ class WorldSave:
                 }))
         if door_partners:
             level["McpyDoorPartners"] = tag.List[tag.Compound](door_partners)
+        block_updates = getattr(world, "_block_updates", None)
+        pending_for_chunk = getattr(block_updates, "pending_for_chunk", None)
+        if callable(pending_for_chunk):
+            tile_ticks = [
+                tag.Compound({
+                    "X": tag.Int(int(x)), "Y": tag.Int(int(y)), "Z": tag.Int(int(z)),
+                    "Block": tag.String(str(block_type)),
+                    "Delay": tag.Int(int(delay)),
+                })
+                for x, y, z, block_type, delay in pending_for_chunk(chunk.cx, chunk.cz)
+            ]
+            if tile_ticks:
+                level["McpyTileTicks"] = tag.List[tag.Compound](tile_ticks)
         if custom_names:
             level["McpyBlockNames"] = tag.List[tag.Compound]([
                 tag.Compound({"Index": tag.Int(int(index)), "Name": tag.String(name)})
@@ -727,6 +809,7 @@ class WorldSave:
             "chunk": chunk,
             "path": path,
             "temp_path": temp_path,
+            "regions": self._regions(),
             "nbtlib": nbtlib,
             "nbt_file": nbt_file,
             "expected_blocks": len(numeric_blocks),
@@ -748,27 +831,25 @@ class WorldSave:
     @staticmethod
     def _write_chunk_snapshot(snapshot):
         started = time.perf_counter()
-        path = snapshot["path"]
-        temp_path = snapshot["temp_path"]
+        cx, cz = snapshot["key"]
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            snapshot["nbt_file"].save(str(temp_path), gzipped=True)
-            _validate_written_nbt(
-                snapshot["nbtlib"], temp_path, "Level",
+            raw = _nbt_file_to_bytes(snapshot["nbt_file"])
+            _validate_nbt_bytes(
+                snapshot["nbtlib"], raw, "Level",
                 expected_blocks=snapshot["expected_blocks"],
             )
-            snapshot["write_bytes"] = temp_path.stat().st_size
-            os.replace(temp_path, path)
-            return True
-        except Exception as exc:
-            print(
-                f"Could not save chunk {snapshot['key'][0]},{snapshot['key'][1]}: {exc}"
-            )
+            if not snapshot["regions"].write_chunk(cx, cz, raw):
+                raise OSError("region write failed")
+            snapshot["write_bytes"] = len(raw)
+            legacy = snapshot["path"]
             try:
-                if temp_path.exists():
-                    temp_path.unlink()
+                if legacy.is_file():
+                    legacy.unlink()
             except OSError:
                 pass
+            return True
+        except Exception as exc:
+            print(f"Could not save chunk {cx},{cz}: {exc}")
             return False
         finally:
             snapshot["write_ms"] = (time.perf_counter() - started) * 1000.0
@@ -874,12 +955,7 @@ class WorldSave:
             has_blocks = any(chunk.blocks)
             self._record_save_gate_timing(world, "empty_check", started)
         if not has_te and not has_items and not has_blocks:
-            path = self.chunk_path(chunk.cx, chunk.cz)
-            try:
-                if path.is_file():
-                    path.unlink()
-            except OSError:
-                pass
+            self._delete_saved_chunk(chunk.cx, chunk.cz)
             chunk.mark_saved_state(world, fingerprint=chunk.fingerprint(), entity_count=0)
             return True
         return self.queue_chunk_save(world, chunk) is not False
@@ -1033,6 +1109,9 @@ class WorldSave:
             self._save_closed = True
         if executor is not None:
             executor.shutdown(wait=wait_for_completion, cancel_futures=not wait_for_completion)
+        cache = getattr(self, "_region_cache", None)
+        if cache is not None:
+            cache.close()
         return ok
 
     def _encode_chunk_blocks(self, chunk):
@@ -1859,11 +1938,17 @@ class WorldSave:
                 return False
             nbtlib, tag = _tag_types()
             self.root.mkdir(parents=True, exist_ok=True)
-            chunks_size = sum(
-                p.stat().st_size for p in self.root.rglob("c.*.*.dat") if p.is_file()
+            chunks_size = self._regions().total_size() + sum(
+                p.stat().st_size for p in self._legacy_chunk_files()
             )
             data = tag.Compound({
+                "version": tag.Int(MCREGION_SAVE_VERSION),
                 "RandomSeed": tag.Long(int(world.seed)),
+                "LevelName": tag.String(str(
+                    getattr(world, "level_name", "")
+                    or (self.level_data or {}).get("LevelName", "")
+                    or self.root.name
+                )),
                 "SpawnX": tag.Int(int(getattr(world, "spawn_x", 0))),
                 "SpawnY": tag.Int(int(getattr(world, "spawn_y", 64))),
                 "SpawnZ": tag.Int(int(getattr(world, "spawn_z", 0))),
@@ -1873,7 +1958,7 @@ class WorldSave:
                 "SnowCovered": tag.Byte(1 if getattr(world, "snow_covered", False) else 0),
                 "DebugWorld": tag.Byte(1 if getattr(world, "debug_world", False) else 0),
                 "McpyAccurateGeneration": tag.Byte(
-                    1 if getattr(world, "accurate_generation", True) else 0
+                    1 if getattr(world, "accurate_generation", False) else 0
                 ),
             })
             if player is not None:
@@ -1893,7 +1978,9 @@ class WorldSave:
                     pass
             os.replace(temp, current)
             self.level_data = {
-                "RandomSeed": int(world.seed), "SpawnX": int(world.spawn_x),
+                "RandomSeed": int(world.seed),
+                "LevelName": str(data.get("LevelName", "")),
+                "SpawnX": int(world.spawn_x),
                 "SpawnY": int(world.spawn_y), "SpawnZ": int(world.spawn_z),
                 "Time": int(world.world_time), "SizeOnDisk": chunks_size,
                 "SnowCovered": bool(getattr(world, "snow_covered", False)),
@@ -2018,6 +2105,198 @@ class WorldSave:
         job = self.begin_save(world, player, stop_workers=stop_workers)
         job.run_to_completion()
         return job.success
+
+
+def rename_world_level_name(save_dir, display_name):
+    name = str(display_name or "").strip()
+    if not name:
+        raise ValueError("world name cannot be empty")
+    if len(name) > 32 or any(ord(char) < 32 for char in name):
+        raise ValueError("world name must be 1-32 printable characters")
+    root_dir = Path(save_dir).expanduser().resolve()
+    candidates = (root_dir / "level.dat", root_dir / "level.dat_old")
+    source_path = next((candidate for candidate in candidates if candidate.is_file()), None)
+    if source_path is None:
+        raise FileNotFoundError(f"No level.dat found in {root_dir}")
+    nbtlib, tag = _tag_types()
+    nbt = _load_nbt_file(nbtlib, source_path)
+    data = _find_named_compound(nbt, "Data")
+    if data is None:
+        raise ValueError(f"Save metadata in {source_path} has no Data compound")
+    data["LevelName"] = tag.String(name)
+    temporary = root_dir / "level.dat_rename"
+    current = root_dir / "level.dat"
+    old = root_dir / "level.dat_old"
+    try:
+        nbt.save(str(temporary), gzipped=True)
+        _validate_written_nbt(nbtlib, temporary, "Data")
+        if source_path == current and current.exists():
+            try:
+                os.replace(current, old)
+            except OSError:
+                pass
+        os.replace(temporary, current)
+        return name
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+
+
+def legacy_chunk_files(root):
+    root = Path(root)
+    found = []
+    try:
+        top_dirs = [d for d in root.iterdir() if d.is_dir() and _LEGACY_DIR_RE.match(d.name)]
+    except OSError:
+        return found
+    for top in top_dirs:
+        try:
+            for sub in top.iterdir():
+                if not (sub.is_dir() and _LEGACY_DIR_RE.match(sub.name)):
+                    continue
+                for item in sub.iterdir():
+                    match = _LEGACY_FILE_RE.match(item.name)
+                    if match and item.is_file():
+                        found.append((int(match.group(1), 36), int(match.group(2), 36), item))
+        except OSError:
+            continue
+    return found
+
+
+def convert_legacy_chunk_dir(root, progress=None, regions=None, files=None):
+    import gzip
+    root = Path(root)
+    files = legacy_chunk_files(root) if files is None else list(files)
+    if not files:
+        return 0, 0
+    regions = regions if regions is not None else RegionFileCache(root)
+    backup_root = root / LEGACY_CHUNK_BACKUP_DIR
+    total = len(files)
+    converted = failed = 0
+    ordered = sorted(files, key=lambda f: (f[0] >> 5, f[1] >> 5, f[0], f[1]))
+    for index, (cx, cz, path) in enumerate(ordered):
+        try:
+            raw = gzip.decompress(path.read_bytes())
+            if not regions.has_chunk(cx, cz):
+                if not regions.write_chunk(cx, cz, raw):
+                    raise OSError("region write failed")
+                if regions.read_chunk(cx, cz) != raw:
+                    raise OSError("region read-back mismatch")
+            target = backup_root / path.relative_to(root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(path, target)
+            converted += 1
+        except Exception as exc:
+            failed += 1
+            print(f"Could not convert chunk {cx},{cz}: {exc}")
+        if progress is not None:
+            try:
+                progress(index + 1, total)
+            except Exception:
+                pass
+    for top in {p.parent.parent for _, _, p in files}:
+        try:
+            for sub in list(top.iterdir()):
+                try:
+                    sub.rmdir()
+                except OSError:
+                    pass
+            top.rmdir()
+        except OSError:
+            pass
+    return converted, failed
+
+
+def _level_version(root):
+    root = Path(root)
+    for name in ("level.dat", "level.dat_old"):
+        path = root / name
+        if not path.is_file():
+            continue
+        try:
+            nbtlib, _tag = _tag_types()
+            data = _find_named_compound(_load_nbt_file(nbtlib, path), "Data")
+            if data is not None:
+                return _as_int(data, "version", 0)
+        except RuntimeError:
+            raise
+        except Exception:
+            continue
+    return None
+
+
+def level_needs_conversion(save_dir):
+    version = _level_version(save_dir)
+    return version is not None and version != MCREGION_SAVE_VERSION
+
+
+def world_needs_conversion(save_dir):
+    root = Path(save_dir)
+    if not ((root / "level.dat").is_file() or (root / "level.dat_old").is_file()):
+        return False
+    if level_needs_conversion(root):
+        return True
+    return bool(legacy_chunk_files(root) or legacy_chunk_files(root / "DIM-1"))
+
+
+def _stamp_level_version(root, version=MCREGION_SAVE_VERSION):
+    root = Path(root)
+    current = root / "level.dat"
+    old = root / "level.dat_old"
+    source = current if current.is_file() else (old if old.is_file() else None)
+    if source is None:
+        return False
+    nbtlib, tag = _tag_types()
+    nbt = _load_nbt_file(nbtlib, source)
+    data = _find_named_compound(nbt, "Data")
+    if data is None:
+        return False
+    data["version"] = tag.Int(int(version))
+    temporary = root / "level.dat_convert"
+    try:
+        nbt.save(str(temporary), gzipped=True)
+        _validate_written_nbt(nbtlib, temporary, "Data")
+        if source == current:
+            try:
+                os.replace(current, old)
+            except OSError:
+                pass
+        os.replace(temporary, current)
+        return True
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+
+
+def convert_world_to_mcregion(save_dir, progress=None):
+    root = Path(save_dir).expanduser().resolve()
+    stores = [root, root / "DIM-1"]
+    listings = [legacy_chunk_files(store) for store in stores]
+    total = sum(len(listing) for listing in listings)
+    if progress is not None:
+        progress(0, total)
+    converted = failed = 0
+    done_before = 0
+    for store, listing in zip(stores, listings):
+        if not listing:
+            continue
+
+        def step(done, _total, base=done_before):
+            if progress is not None:
+                progress(base + done, total)
+
+        c, f = convert_legacy_chunk_dir(store, step, files=listing)
+        converted += c
+        failed += f
+        done_before += len(listing)
+    _stamp_level_version(root)
+    return converted, failed
 
 
 class SaveJob:

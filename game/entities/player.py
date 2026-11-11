@@ -128,6 +128,10 @@ class Player(Entity):
         self.dispenser_opener = None
         self.minecart_chest_opener = None
         self.sign_opener = None
+        self.is_sleeping = False
+        self.sleep_timer = 0
+        self._sleep_tick_accum = 0.0
+        self.bed_location = None  
         self._distance_walked = 0.0
         self._fall_distance = 0.0
         self._fall_pending = 0.0
@@ -250,6 +254,8 @@ class Player(Entity):
             return False
         if self.hearts_life > 10 and not force:
             return False
+        if self.is_player_sleeping():
+            self.wake_up_player(reset_timer=True, update_world_flag=True)
 
         difficulty_scaled = (
             source == "arrow"
@@ -434,6 +440,7 @@ class Player(Entity):
 
             self.hearts_life = max(0, self.hearts_life - 1)
             self.hurt_time = max(0, self.hurt_time - 1)
+            self._tick_sleeping()
             if self.gamemode == 1:
                 self.air = self.max_air
                 continue
@@ -475,7 +482,12 @@ class Player(Entity):
 
     def sync_camera(self):
         self.renderer.camX = self.pos[0]
-        eye_height = 0.12 if self.health <= 0 and self._death_pose_active else self.EYE_HEIGHT
+        if self.health <= 0 and self._death_pose_active:
+            eye_height = 0.12
+        elif self.is_player_sleeping():
+            eye_height = 0.32
+        else:
+            eye_height = self.EYE_HEIGHT
         self.renderer.camY = self.pos[1] + eye_height - self.render_y_offset
         self.renderer.camZ = self.pos[2]
         self.renderer.yaw = self.yaw
@@ -779,8 +791,6 @@ class Player(Entity):
                             if return_distance:
                                 return (cx, cy, cz), liquid_normal, liquid_hit[0]
                             return (cx, cy, cz), liquid_normal
-                    continue
-                if not (include_intangible or not getattr(block, "intangible", False)):
                     continue
                 selection_boxes = (
                     block.get_selection_boxes()
@@ -1290,7 +1300,8 @@ class Player(Entity):
 
         if not creative:
             held = self.inventory.get_active_item()
-            if can_harvest(block_type, held):
+            bed_drops_item = block_type != "bed" or not (int(meta) & 8)
+            if bed_drops_item and can_harvest(block_type, held):
                 self._spawn_block_drops(block_type, drop_meta, drop_pos, held=held)
             self._wear_held_item(held)
         self._record_performance_event(
@@ -1392,7 +1403,7 @@ class Player(Entity):
     def _player_overlaps_placement(self, bx, by, bz, block_type):
         Block._load_defs()
         defn = Block._block_defs.get(block_type, {})
-        if defn.get("collision", not defn.get("intangible", False)) is False:
+        if defn.get("collision", True) is False:
             return False
         bounds = defn.get("bounds", [0.0, 0.0, 0.0, 1.0, 1.0, 1.0])
         local = Block.classic_to_center(bounds)
@@ -1603,7 +1614,7 @@ class Player(Entity):
         above = self.world.get_block_type(hx, hy + 1, hz)
         if above is not None:
             above_def = Block._block_defs.get(above, {})
-            if above_def.get("collision", not above_def.get("intangible", False)):
+            if above_def.get("collision", True):
                 return False
         self.world.set_block(hx, hy, hz, "farmland", meta=0, immediate_mesh=True)
         self._play_block_sound("farmland", (float(hx), float(hy), float(hz)))
@@ -1683,11 +1694,20 @@ class Player(Entity):
     _JUKEBOX_META_TO_RECORD = {1: "record_13", 2: "record_cat"}
     _JUKEBOX_RECORD_TO_META = {value: key for key, value in _JUKEBOX_META_TO_RECORD.items()}
 
+    def _show_plain_actionbar_message(self, message, duration=3.0):
+        import time as _time
+        now = _time.monotonic()
+        self._actionbar_message = str(message)
+        self._actionbar_started_at = now
+        self._actionbar_expires_at = now + max(0.0, float(duration))
+        self._actionbar_style = "plain"
+
     def _show_actionbar_message(self, message, duration=3.0):
         now = time.monotonic()
         self._actionbar_message = str(message)
         self._actionbar_started_at = now
         self._actionbar_expires_at = now + max(0.0, float(duration))
+        self._actionbar_style = "record"
 
     def _eject_jukebox_record(self, x, y, z, *, clear_metadata=True):
         if self.world is None or self.world.get_block_type(x, y, z) != "jukebox":
@@ -1717,6 +1737,232 @@ class Player(Entity):
         return True
 
     @_network_edit_action
+
+    def is_player_sleeping(self) -> bool:
+        return bool(getattr(self, "is_sleeping", False))
+
+    def is_player_fully_asleep(self) -> bool:
+        return self.is_player_sleeping() and int(getattr(self, "sleep_timer", 0)) >= 100
+
+    def _sleep_message(self, key: str) -> None:
+        try:
+            from game.localization import translate
+            message = translate(key)
+        except Exception:
+            message = key
+        mc = getattr(self, "mc", None) or getattr(self, "game", None)
+        add = getattr(mc, "add_chat_message", None) if mc is not None else None
+        if callable(add):
+            add(message)
+
+    def _clear_sleep_animation_state(self) -> None:
+        self.stop_using_item()
+        self.limb_swing = self.prev_limb_swing = 0.0
+        self.limb_swing_amount = self.prev_limb_swing_amount = 0.0
+        self._limb_distance_accum = 0.0
+        self._anim_tick_accum = 0.0
+        self.swing_progress = self.prev_swing_progress = 0.0
+        self._swing_progress_int = 0
+        self._is_swing_in_progress = False
+        self._left_click_counter = 0
+        self.distance_walked_modified = self.prev_distance_walked_modified = 0.0
+        self.camera_yaw = self.prev_camera_yaw = 0.0
+        self.camera_pitch = self.prev_camera_pitch = 0.0
+
+    def _tick_sleep_animation_clock(self, dt: float) -> None:
+        elapsed = min(max(float(dt), 0.0), 0.25)
+        self._sleep_tick_accum += elapsed
+        ticks = min(int(self._sleep_tick_accum / 0.05), 4)
+        if ticks > 0:
+            self._sleep_tick_accum -= ticks * 0.05
+            self.ticks_existed += ticks
+            self.prev_limb_swing = self.limb_swing = 0.0
+            self.prev_limb_swing_amount = self.limb_swing_amount = 0.0
+            self.prev_swing_progress = self.swing_progress = 0.0
+            self.prev_render_yaw_offset = self.render_yaw_offset
+        self._anim_tick_accum = self._sleep_tick_accum
+
+        self._anim_accum += elapsed
+        inventory_ticks = min(int(self._anim_accum / 0.05), 4)
+        for _ in range(inventory_ticks):
+            self._anim_accum -= 0.05
+            self.inventory.decrement_animations()
+
+    def try_sleep_in_bed(self, x: int, y: int, z: int) -> bool:
+        from game.block.bed import (
+            bed_is_head, bed_is_occupied, bed_head_position, bed_sleep_position,
+            bed_set_occupied, bed_direction, bed_sleep_camera_yaw, bed_sleep_body_yaw,
+        )
+        from game.entities.entity import Entity
+
+        world = getattr(self, "world", None) or Entity.world
+        if world is None or self.health <= 0 or self.is_player_sleeping():
+            return False
+        if bool(getattr(world, "is_hell_world", False)):
+            self._sleep_message("tile.bed.noSleep")
+            return False
+        if world.get_block_type(x, y, z) != "bed":
+            return False
+        meta = int(world.get_metadata(x, y, z)) & 15
+        hx, hy, hz = bed_head_position(x, y, z, meta)
+        head_meta = int(world.get_metadata(hx, hy, hz)) & 15
+        if world.get_block_type(hx, hy, hz) != "bed":
+            return False
+        if bed_is_occupied(head_meta):
+            self._sleep_message("tile.bed.occupied")
+            return False
+        is_daytime = getattr(world, "is_daytime", None)
+        if callable(is_daytime) and is_daytime():
+            self._sleep_message("tile.bed.noSleep")
+            return False
+        if (abs(float(self.pos[0]) + 0.5 - float(hx)) > 3.0
+                or abs(float(self.pos[2]) + 0.5 - float(hz)) > 3.0):
+            self._sleep_message("tile.bed.noSleep")
+            return False
+        java_entity_y = float(self.pos[1]) + float(self.EYE_HEIGHT) + 0.5
+        if abs(java_entity_y - float(hy)) > 2.0:
+            self._sleep_message("tile.bed.noSleep")
+            return False
+        claim_bed = getattr(world, "_network_bed_claim_callback", None)
+        if callable(claim_bed):
+            try:
+                claimed = claim_bed("claim", (hx, hy, hz), int(head_meta) & 3)
+            except Exception:
+                claimed = False
+            if claimed is False:
+                self._sleep_message("tile.bed.occupied")
+                return False
+        sx, sy, sz = bed_sleep_position(hx, hy, hz, head_meta)
+        self._pre_sleep_yaw = float(getattr(self, "yaw", 0.0))
+        self._pre_sleep_pitch = float(getattr(self, "pitch", 0.0))
+        self._pre_sleep_render_yaw_offset = float(
+            getattr(self, "render_yaw_offset", self._pre_sleep_yaw)
+        )
+        self._clear_sleep_animation_state()
+        self.is_sneaking = False
+        if hasattr(self, "render_y_offset"):
+            self.render_y_offset = 0.0
+        if hasattr(self, "y_size"):
+            self.y_size = 0.0
+        self.size = (0.2, 0.2, 0.2)
+        self.pos[0], self.pos[1], self.pos[2] = sx, sy, sz
+        if hasattr(self, "prev_pos"):
+            self.prev_pos[:] = self.pos
+        self.vel = [0.0, 0.0, 0.0]
+        self.is_sleeping = True
+        self.sleep_timer = 0
+        world_tick_phase = min(max(float(getattr(world, "_tick_accum", 0.0)), 0.0), 0.049999)
+        self._sleep_tick_accum = world_tick_phase
+        self._anim_tick_accum = world_tick_phase
+        self.bed_location = (hx, hy, hz)
+        self._bed_sleep_meta = int(head_meta) & 3
+        self.yaw = bed_sleep_camera_yaw(head_meta)
+        self.pitch = 0.0
+        self.prev_yaw = self.yaw
+        self.prev_pitch = self.pitch
+        self.render_yaw_offset = bed_sleep_body_yaw(head_meta)
+        self.prev_render_yaw_offset = self.render_yaw_offset
+        bed_set_occupied(world, hx, hy, hz, True)
+        update_sleepers = getattr(world, "update_all_players_sleeping_flag", None)
+        if callable(update_sleepers):
+            update_sleepers()
+        mc = getattr(self, "mc", None) or getattr(self, "game", None)
+        if mc is not None:
+            try:
+                from game.gameplay.screens import GuiSleep
+                display = getattr(mc, "display_gui_screen", None)
+                if callable(display):
+                    display(GuiSleep())
+            except Exception:
+                pass
+        return True
+
+    def wake_up_player(self, reset_timer: bool = True, update_world_flag: bool = True) -> None:
+        from game.block.bed import bed_set_occupied, bed_exit_position
+        from game.entities.entity import Entity
+
+        world = getattr(self, "world", None) or Entity.world
+        bed = getattr(self, "bed_location", None)
+        if world is not None and bed is not None:
+            bx, by, bz = (int(v) for v in bed)
+            release_bed = getattr(world, "_network_bed_claim_callback", None)
+            if callable(release_bed):
+                try:
+                    release_bed("release", (bx, by, bz), int(getattr(self, "_bed_sleep_meta", 0) or 0))
+                except Exception:
+                    pass
+            if world.get_block_type(bx, by, bz) == "bed":
+                meta = int(world.get_metadata(bx, by, bz)) & 15
+                bed_set_occupied(world, bx, by, bz, False)
+                ex, ey, ez = bed_exit_position(world, bx, by, bz, meta)
+                self.pos[0], self.pos[1], self.pos[2] = ex, ey, ez
+                if hasattr(self, "prev_pos"):
+                    self.prev_pos[:] = self.pos
+                self.vel = [0.0, 0.0, 0.0]
+                self.on_ground = True
+        self.size = (0.6, 1.8, 0.6)
+        self.is_sleeping = False
+        self.bed_location = None
+        self._bed_sleep_meta = None
+        if hasattr(self, "_pre_sleep_yaw"):
+            self.yaw = float(self._pre_sleep_yaw)
+            self.pitch = float(getattr(self, "_pre_sleep_pitch", 0.0))
+            self.prev_yaw = self.yaw
+            self.prev_pitch = self.pitch
+            self.render_yaw_offset = float(getattr(
+                self, "_pre_sleep_render_yaw_offset", self.yaw
+            ))
+            self.prev_render_yaw_offset = self.render_yaw_offset
+            del self._pre_sleep_yaw
+            for attribute in ("_pre_sleep_pitch", "_pre_sleep_render_yaw_offset"):
+                if hasattr(self, attribute):
+                    delattr(self, attribute)
+        if reset_timer:
+            self.sleep_timer = 0
+        else:
+            self.sleep_timer = 100
+        self._sleep_tick_accum = 0.0
+        self._clear_sleep_animation_state()
+        if world is not None:
+            try:
+                self._anim_tick_accum = min(max(float(getattr(world, "_tick_accum", 0.0)), 0.0), 0.049999)
+            except (TypeError, ValueError, OverflowError):
+                self._anim_tick_accum = 0.0
+        if update_world_flag:
+            update_sleepers = getattr(world, "update_all_players_sleeping_flag", None) if world else None
+            if callable(update_sleepers):
+                update_sleepers()
+        mc = getattr(self, "mc", None) or getattr(self, "game", None)
+        if mc is not None:
+            cur = getattr(mc, "current_screen", None)
+            if cur is not None and cur.__class__.__name__ == "GuiSleep":
+                display = getattr(mc, "display_gui_screen", None)
+                if callable(display):
+                    display(None)
+
+    def _tick_sleeping(self) -> None:
+        if not self.is_player_sleeping():
+            if int(getattr(self, "sleep_timer", 0)) > 0:
+                self.sleep_timer = int(self.sleep_timer) + 1
+                if self.sleep_timer >= 110:
+                    self.sleep_timer = 0
+            return
+        self.sleep_timer = min(100, int(getattr(self, "sleep_timer", 0)) + 1)
+        from game.entities.entity import Entity
+        world = getattr(self, "world", None) or Entity.world
+        bed = getattr(self, "bed_location", None)
+        if world is None or bed is None or world.get_block_type(*bed) != "bed":
+            self.wake_up_player(reset_timer=True, update_world_flag=True)
+            return
+        is_daytime = getattr(world, "is_daytime", None)
+        if callable(is_daytime) and is_daytime():
+            self.wake_up_player(reset_timer=False, update_world_flag=True)
+            return
+        if int(self.sleep_timer) >= 100:
+            try_skip = getattr(world, "_try_skip_night", None)
+            if callable(try_skip):
+                try_skip()
+
     def place_block(self):
         operation_started = time.perf_counter()
         selected = self.inventory.get_active_item()
@@ -1825,16 +2071,26 @@ class Player(Entity):
                 return self._finish_interactable_action(selected)
             return False
 
+        if hit and self.world.get_block_type(*hit) == "bed":
+            self.stop_digging()
+            if self.try_sleep_in_bed(int(hit[0]), int(hit[1]), int(hit[2])):
+                return self._finish_interactable_action(selected)
+            return True
         if hit and self.world.get_block_type(*hit) == "wooden_door":
             self._toggle_door_at(*hit)
             return self._finish_interactable_action(selected)
-        if hit and self.world.get_block_type(*hit) in ("lever", "stone_button"):
+        if hit and self.world.get_block_type(*hit) in (
+            "lever", "stone_button", "redstone_repeater", "redstone_repeater_on",
+        ):
             redstone = getattr(self.world, "_redstone_system", None)
             if redstone is not None:
-                if self.world.get_block_type(*hit) == "lever":
+                hit_type = self.world.get_block_type(*hit)
+                if hit_type == "lever":
                     redstone.toggle_lever(*hit)
-                else:
+                elif hit_type == "stone_button":
                     redstone.press_button(*hit)
+                else:
+                    redstone.cycle_repeater_delay(*hit)
             return self._finish_interactable_action(selected)
         if hit and self.world.get_block_type(*hit) in ("redstone_ore", "redstone_ore_lit"):
             from game.block.redstone_ore import activate_redstone_ore
@@ -1998,11 +2254,20 @@ class Player(Entity):
                 nx, ny + 1, nz, place_id, meta=meta | 8,
                 immediate_mesh=True,
             )
-        elif place_id == "stone_slab" and self.world.get_block_type(nx, ny - 1, nz) == "stone_slab":
-
-            self.world.set_block(nx, ny - 1, nz, "double_stone_slab", meta=0, immediate_mesh=True)
+        elif place_id == "bed":
+            from game.block.bed import place_bed
+            if not place_bed(self.world, nx, ny, nz, meta):
+                return False
+        elif (place_id == "stone_slab"
+                and self.world.get_block_type(nx, ny - 1, nz) == "stone_slab"
+                and (int(self.world.get_metadata(nx, ny - 1, nz)) & 3) == (int(meta) & 3)):
+            self.world.set_block(nx, ny - 1, nz, "double_stone_slab", meta=int(meta) & 3, immediate_mesh=True)
         else:
             self.world.set_block(nx, ny, nz, place_id, meta=meta, immediate_mesh=True)
+        if place_id == "redstone_repeater":
+            redstone = getattr(self.world, "_redstone_system", None)
+            if redstone is not None:
+                redstone.on_repeater_placed(nx, ny, nz)
         if place_id == "rail":
             refresh_rail_and_neighbors(self.world, nx, ny, nz)
         if place_id in ("sign", "wall_sign") and self.sign_opener is not None:
@@ -2289,6 +2554,15 @@ class Player(Entity):
                 advance_cape_motion(self, dt)
                 return
         self._ride_last_pos = None
+
+        if self.is_player_sleeping():
+            self.vel = [0.0, 0.0, 0.0]
+            self._clear_sleep_animation_state()
+            self._tick_sleep_animation_clock(dt)
+            self._tick_survival(dt)
+            advance_cape_motion(self, dt)
+            self.sync_camera()
+            return
 
         if self.health <= 0:
             self.stop_using_item()

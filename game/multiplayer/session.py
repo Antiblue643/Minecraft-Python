@@ -119,6 +119,22 @@ def remote_player_in_render_view(remote, world, renderer, camera_player=None) ->
         return True
     try:
         px, py, pz = (float(value) for value in remote.pos[:3])
+        sleeping = bool(getattr(remote, "is_sleeping", False))
+        sleep_bounds = None
+        if sleeping:
+            try:
+                from game.block.bed import bed_sleep_render_offset
+                meta = int(getattr(remote, "_bed_sleep_meta", 0) or 0) & 3
+                offset_x, offset_z = bed_sleep_render_offset(meta)
+                px += float(offset_x)
+                pz += float(offset_z)
+                width, depth = (0.7, 1.9) if meta in (0, 2) else (1.9, 0.7)
+                sleep_bounds = (
+                    px - width * 0.5, py - 0.12, pz - depth * 0.5,
+                    px + width * 0.5, py + 0.62, pz + depth * 0.5,
+                )
+            except Exception:
+                sleep_bounds = None
         fallback = getattr(camera_player, "pos", (
             getattr(renderer, "camX", 0.0),
             getattr(renderer, "camY", 64.0),
@@ -150,8 +166,10 @@ def remote_player_in_render_view(remote, world, renderer, camera_player=None) ->
             make_frustum = getattr(world, "_camera_frustum", None)
             frustum = make_frustum() if callable(make_frustum) else None
         if frustum is not None:
-            bounds_getter = getattr(remote, "get_interaction_bounds", None)
-            bounds = bounds_getter() if callable(bounds_getter) else None
+            bounds = sleep_bounds
+            if bounds is None:
+                bounds_getter = getattr(remote, "get_interaction_bounds", None)
+                bounds = bounds_getter() if callable(bounds_getter) else None
             if bounds is None:
                 width, height, depth = getattr(remote, "size", (0.6, 1.8, 0.6))
                 bounds = (px - float(width) * 0.5, py, pz - float(depth) * 0.5,
@@ -198,6 +216,7 @@ class MultiplayerSession:
         self._boat_control_accum = 0.0
         self._last_boat_control_entity_id = None
         self._jukebox_audio_states = {}
+        self._authoritative_bed_occupancy: set[tuple[int, int, int]] = set()
         self.server_config: Optional[ServerConfig] = None
 
     @property
@@ -275,7 +294,7 @@ class MultiplayerSession:
             on_log=self.log,
             snow_covered=bool(getattr(game.world, "snow_covered", False)),
             world_time=int(getattr(game.world, "world_time", 0)),
-            accurate_generation=bool(getattr(game.world, "accurate_generation", True)),
+            accurate_generation=bool(getattr(game.world, "accurate_generation", False)),
             debug_world=bool(getattr(game.world, "debug_world", False)),
             banned_names=banned_names,
             operator_names=set(self.server_config.operators),
@@ -301,6 +320,7 @@ class MultiplayerSession:
         self._tile_entity_sync_accum = 0.0
         self._reset_chunk_sync_state()
         self.remote_entities.clear()
+        self._authoritative_bed_occupancy.clear()
         self._entity_sync_accum = 0.0
         self._next_entity_net_id = 1
         self.attach_world(game.world)
@@ -339,6 +359,7 @@ class MultiplayerSession:
         self._tile_entity_sync_accum = 0.0
         self._reset_chunk_sync_state()
         self.remote_entities.clear()
+        self._authoritative_bed_occupancy.clear()
         self._entity_sync_accum = 0.0
         self._next_entity_net_id = 1
         return self.client
@@ -364,13 +385,115 @@ class MultiplayerSession:
                 self.client.inventory_revision = 0
                 self.client.inventory_send_revision = 0
         self.attach_world(getattr(self.game, "world", None))
+        world = getattr(self.game, "world", None)
+        if world is not None:
+            self._apply_authoritative_world_time(world, welcome.get("world_time", 0))
         if isinstance(welcome.get("inventory"), dict):
             self._apply_local_inventory_state(welcome["inventory"])
         for p in welcome.get("players") or []:
             self._spawn_remote(p)
-        world = getattr(self.game, "world", None)
         if world is not None:
+            try:
+                from game.block.bed import clear_loaded_bed_occupancy
+                clear_loaded_bed_occupancy(world)
+            except Exception:
+                pass
+            occupied = set()
+            for bed in welcome.get("occupied_beds") or []:
+                if isinstance(bed, (list, tuple)) and len(bed) == 3:
+                    try:
+                        x, y, z = (int(value) for value in bed)
+                        if (-30_000_000 <= x <= 30_000_000 and 0 <= y < 256
+                                and -30_000_000 <= z <= 30_000_000):
+                            occupied.add((x, y, z))
+                    except (TypeError, ValueError, OverflowError):
+                        pass
+            if "occupied_beds" not in welcome:
+                for peer in welcome.get("players") or []:
+                    if not bool(peer.get("sleeping", False)):
+                        continue
+                    bed = peer.get("bed_location")
+                    if isinstance(bed, (list, tuple)) and len(bed) == 3:
+                        try:
+                            occupied.add(tuple(int(value) for value in bed))
+                        except (TypeError, ValueError, OverflowError):
+                            pass
+            self._authoritative_bed_occupancy = occupied
+            self._restore_live_bed_occupancy(world)
             world._mp_remote_players = tuple(self.remote_players.values())
+
+    @staticmethod
+    def _apply_authoritative_world_time(world, value) -> None:
+        try:
+            new_time = max(0, int(value))
+        except (TypeError, ValueError, OverflowError):
+            return
+        old_time = int(getattr(world, "world_time", 0))
+        if old_time == new_time:
+            return
+        world.world_time = new_time
+        updater = getattr(world, "_update_skylight_subtracted", None)
+        if callable(updater):
+            updater()
+        world._cloud_tick_pending = 0
+        clouds = getattr(world, "_cloud_renderer", None)
+        if clouds is not None:
+            clouds.cloud_tick = new_time
+
+    def _on_local_bed_claim(self, action: str, bed_location, _bed_meta=0):
+        if self.mode != "host" or self.server is None:
+            return None
+        if action == "claim":
+            return self.server.claim_bed(self.local_id, bed_location)
+        if action == "release":
+            self.server.release_bed(self.local_id, bed_location)
+            return True
+        return False
+
+    def _apply_bed_occupancy(self, event: dict) -> None:
+        try:
+            key = (int(event.get("x")), int(event.get("y")), int(event.get("z")))
+        except (TypeError, ValueError, OverflowError):
+            return
+        occupied = bool(event.get("occupied", False))
+        if occupied:
+            self._authoritative_bed_occupancy.add(key)
+        else:
+            self._authoritative_bed_occupancy.discard(key)
+        world = getattr(self.game, "world", None)
+        if world is None:
+            return
+        try:
+            from game.block.bed import bed_set_occupied
+            bed_set_occupied(world, *key, occupied)
+        except Exception:
+            return
+
+    def _restore_live_bed_occupancy(self, world) -> None:
+        if world is None:
+            return
+        try:
+            from game.block.bed import bed_set_occupied
+        except Exception:
+            return
+        for bed in tuple(self._authoritative_bed_occupancy):
+            try:
+                bed_set_occupied(world, int(bed[0]), int(bed[1]), int(bed[2]), True)
+            except (TypeError, ValueError, OverflowError):
+                continue
+        players = [getattr(world, "player", None), *self.remote_players.values()]
+        for player in players:
+            if player is None or not bool(getattr(player, "is_sleeping", False)):
+                continue
+            bed = getattr(player, "bed_location", None)
+            if not isinstance(bed, (list, tuple)) or len(bed) != 3:
+                continue
+            try:
+                bed_set_occupied(
+                    world, int(bed[0]), int(bed[1]), int(bed[2]), True,
+                )
+            except (TypeError, ValueError, OverflowError):
+                continue
 
     def _attach_local_inventory(self) -> None:
         player = getattr(self.game, "player", None)
@@ -428,6 +551,8 @@ class MultiplayerSession:
         if previous is not None and previous is not world:
             previous._network_block_callback = None
             previous._network_world_event_callback = None
+            previous._network_sleep_cycle_callback = None
+            previous._network_bed_claim_callback = None
             previous._network_bucket_callback = None
             previous._network_item_use_callback = None
             previous._network_jukebox_callback = None
@@ -448,11 +573,23 @@ class MultiplayerSession:
         self._attached_world = world
         if previous is not world:
             self._jukebox_audio_states.clear()
+            if world is not None:
+                try:
+                    from game.block.bed import clear_loaded_bed_occupancy
+                    clear_loaded_bed_occupancy(world)
+                except Exception:
+                    pass
         if world is not None:
             world._multiplayer_world = True
             world._multiplayer_client_world = self.mode == "client"
             world._network_block_callback = self._on_local_block_change
             world._network_world_event_callback = self.publish_world_event
+            world._network_bed_claim_callback = (
+                self._on_local_bed_claim if self.mode == "host" else None
+            )
+            world._network_sleep_cycle_callback = (
+                self._sync_woken_remote_players if self.mode == "host" else None
+            )
             world._network_bucket_callback = (
                 self._on_local_bucket_use if self.mode == "client" else None
             )
@@ -515,17 +652,7 @@ class MultiplayerSession:
         if kind == "time":
             if world is None:
                 return
-            new_time = int(packet["world_time"])
-            old_time = int(getattr(world, "world_time", 0))
-            if old_time != new_time:
-                world.world_time = new_time
-                updater = getattr(world, "_update_skylight_subtracted", None)
-                if callable(updater):
-                    updater()
-                world._cloud_tick_pending = 0
-                clouds = getattr(world, "_cloud_renderer", None)
-                if clouds is not None:
-                    clouds.cloud_tick = new_time
+            self._apply_authoritative_world_time(world, packet["world_time"])
             return
 
         old_game_suppress = bool(getattr(game, "_mp_suppress_world_events", False))
@@ -1323,7 +1450,32 @@ class MultiplayerSession:
             "limb_swing": getattr(player, "limb_swing", 0.0),
             "limb_swing_amount": getattr(player, "limb_swing_amount", 0.0),
             "sneaking": bool(getattr(player, "is_sneaking", False)),
+            "sleeping": bool(getattr(player, "is_sleeping", False)),
+            "sleep_timer": getattr(player, "sleep_timer", 0),
+            "ticks_existed": getattr(player, "ticks_existed", 0),
+            "bed_location": getattr(player, "bed_location", None),
+            "bed_meta": getattr(player, "_bed_sleep_meta", 0) or 0,
+            "pre_sleep_yaw": getattr(player, "_pre_sleep_yaw", getattr(player, "yaw", 0.0)),
+            "pre_sleep_pitch": getattr(player, "_pre_sleep_pitch", getattr(player, "pitch", 0.0)),
+            "pre_sleep_body_yaw": getattr(
+                player, "_pre_sleep_render_yaw_offset",
+                getattr(player, "render_yaw_offset", getattr(player, "yaw", 0.0)),
+            ),
         })
+
+    def _sync_woken_remote_players(self, players) -> None:
+        if self.mode != "host" or self.server is None:
+            return
+        for remote in tuple(players or ()):
+            try:
+                self.server.set_client_state(
+                    remote.network_id,
+                    float(remote.pos[0]), float(remote.pos[1]), float(remote.pos[2]),
+                    float(remote.yaw), float(remote.pitch),
+                    state=self._player_render_state(remote),
+                )
+            except (AttributeError, TypeError, ValueError, OverflowError):
+                continue
 
     @staticmethod
     def _entity_kind(entity):
@@ -2677,6 +2829,12 @@ class MultiplayerSession:
             self.log(f"Chunk sync failed: {type(exc).__name__}: {exc}")
 
     def stop(self) -> None:
+        local_player = getattr(self.game, "player", None)
+        if local_player is not None and bool(getattr(local_player, "is_sleeping", False)):
+            try:
+                local_player.wake_up_player(reset_timer=True)
+            except Exception:
+                pass
         if self._attached_inventory is not None:
             callback = getattr(self._attached_inventory, "_hotbar_selection_callback", None)
             if getattr(callback, "__self__", None) is self:
@@ -2692,6 +2850,8 @@ class MultiplayerSession:
             self._jukebox_audio_states.clear()
             self._attached_world._network_block_callback = None
             self._attached_world._network_world_event_callback = None
+            self._attached_world._network_sleep_cycle_callback = None
+            self._attached_world._network_bed_claim_callback = None
             self._attached_world._network_bucket_callback = None
             self._attached_world._network_item_use_callback = None
             self._attached_world._network_jukebox_callback = None
@@ -2708,12 +2868,18 @@ class MultiplayerSession:
             self._attached_world._multiplayer_client_world = False
             self._attached_world._mp_remote_player_positions = []
             self._attached_world._mp_remote_players = ()
+            try:
+                from game.block.bed import clear_loaded_bed_occupancy
+                clear_loaded_bed_occupancy(self._attached_world)
+            except Exception:
+                pass
             entities = getattr(self._attached_world, "entities", None)
             if entities is not None:
                 self._attached_world.entities = [e for e in entities
                                                  if not getattr(e, "_mp_remote_entity", False)]
             self._attached_world = None
         self.remote_entities.clear()
+        self._authoritative_bed_occupancy.clear()
         if self.server is not None:
             if self.server_config is not None:
                 for snapshot in self.server.snapshot_players():
@@ -2870,6 +3036,14 @@ class MultiplayerSession:
             world = getattr(game, "world", None)
             if world is not None:
                 world._mp_remote_players = tuple(self.remote_players.values())
+                self._restore_live_bed_occupancy(world)
+                if self.mode == "host":
+                    updater = getattr(world, "update_all_players_sleeping_flag", None)
+                    if callable(updater):
+                        updater()
+                    try_skip = getattr(world, "_try_skip_night", None)
+                    if callable(try_skip):
+                        try_skip()
             self._update_remote_entities(dt)
         except Exception as exc:
             print(f"mp session update error: {exc}")
@@ -2888,7 +3062,34 @@ class MultiplayerSession:
 
     def _handle_event(self, ev: dict) -> None:
         t = ev.get("t")
-        if t == "command_request":
+        if t == "bed_occupancy":
+            self._apply_bed_occupancy(ev)
+        elif t == "bed_claim_result":
+            if self.mode == "client" and not bool(ev.get("granted", False)):
+                player = getattr(self.game, "player", None)
+                bed = ev.get("bed_location")
+                current_bed = getattr(player, "bed_location", None) if player is not None else None
+                try:
+                    same_bed = (
+                        isinstance(bed, (list, tuple)) and len(bed) == 3
+                        and current_bed is not None
+                        and tuple(int(v) for v in bed) == tuple(int(v) for v in current_bed)
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    same_bed = False
+                if (player is not None and bool(getattr(player, "is_sleeping", False))
+                        and same_bed):
+                    player.wake_up_player(reset_timer=True)
+                    try:
+                        from game.block.bed import bed_set_occupied
+                        bed_set_occupied(
+                            self.game.world, int(bed[0]), int(bed[1]), int(bed[2]), True,
+                        )
+                    except Exception:
+                        pass
+                    from game.localization import translate
+                    self.game.add_chat_message(translate("tile.bed.occupied"))
+        elif t == "command_request":
             self._handle_command_request(ev)
         elif t == "inventory_sync_request":
             self._approve_remote_inventory_sync(ev)
@@ -3478,15 +3679,10 @@ class MultiplayerSession:
             return
         target = next((candidate for candidate in getattr(world, "entities", ())
                        if int(getattr(candidate, "_mp_net_id", 0) or 0) == entity_id), None)
-        if action in {"milk_cow", "milk_squid"}:
-            if action == "milk_cow":
-                from game.entities.cow import Cow
-                target_type = Cow
-            else:
-                from game.entities.squid import Squid
-                target_type = Squid
+        if action == "milk_cow":
+            from game.entities.cow import Cow
             if (float(getattr(remote, "health", 20.0)) <= 0.0
-                    or not isinstance(target, target_type) or target.dead
+                    or not isinstance(target, Cow) or target.dead
                     or float(getattr(target, "health", 0.0)) <= 0.0):
                 return
             inventory = getattr(remote, "inventory", None)
@@ -4430,9 +4626,31 @@ class MultiplayerSession:
                     pass
             try:
                 crouch = float(getattr(rp, "render_y_offset", 0.0))
-                player_model.render_player_model(
-                    rp, rp.pos[0], rp.pos[1] - crouch, rp.pos[2], body_yaw, partial
-                )
+                render_x = float(rp.pos[0])
+                render_y = float(rp.pos[1] - crouch)
+                render_z = float(rp.pos[2])
+                render_head_yaw = None
+                render_head_pitch = None
+                if bool(getattr(rp, "is_sleeping", False)):
+                    from game.block.bed import (
+                        bed_sleep_render_offset, bed_sleep_body_yaw,
+                    )
+                    sleep_meta = int(getattr(rp, "_bed_sleep_meta", 0) or 0)
+                    offset_x, offset_z = bed_sleep_render_offset(sleep_meta)
+                    render_x += offset_x
+                    render_z += offset_z
+                    body_yaw = bed_sleep_body_yaw(sleep_meta)
+                    render_head_yaw = body_yaw
+                    render_head_pitch = 0.0
+                if render_head_yaw is None:
+                    player_model.render_player_model(
+                        rp, render_x, render_y, render_z, body_yaw, partial,
+                    )
+                else:
+                    player_model.render_player_model(
+                        rp, render_x, render_y, render_z, body_yaw, partial,
+                        head_yaw=render_head_yaw, head_pitch=render_head_pitch,
+                    )
                 if int(getattr(rp, "_fire_ticks", 0)) > 0:
                     player_model.render_player_fire_effect(
                         rp, rp.pos[0], rp.pos[1] - crouch, rp.pos[2]

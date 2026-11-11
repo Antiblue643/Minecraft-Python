@@ -2,7 +2,7 @@
 
 ![A standalone render of the Minecraft Python logo](images/mcpy_title.png)
 
-Minecraft Python is a Python recreation of the `beta` Minecraft experience.
+Minecraft Python is a Python recreation of the `beta` Minecraft experience. As time goes on, I'll gradually iterate through newer and newer minecraft versions. I don't have an end goal for this.
 
 > **Disclaimer & Legal Notice:** This project is an unofficial, non-commercial fan recreation built entirely for educational and recreational purposes. It is **NOT** a 1:1 port of Minecraft Java Edition and has its own suite of bugs, imperfections, and differences from the original game.
 >

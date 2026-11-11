@@ -833,6 +833,19 @@
       ],
       "amount": 1
     },
+    "bed": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "wool",
+        "y": "planks"
+      },
+      "shape": [
+        "xxx",
+        "yyy"
+      ],
+      "amount": 1
+    },
     "tnt": {
       "station": "crafting",
       "shapeless": false,
@@ -851,7 +864,7 @@
       "station": "crafting",
       "shapeless": false,
       "key": {
-        "x": "cobblestone"
+        "x": "stone"
       },
       "shape": [
         "xxx"
@@ -1092,7 +1105,7 @@
         "x": "stone"
       },
       "shape": [
-        "xxx"
+        "xx"
       ],
       "amount": 1
     },
@@ -1103,7 +1116,7 @@
         "x": "planks"
       },
       "shape": [
-        "xxx"
+        "xx"
       ],
       "amount": 1
     },
@@ -1890,6 +1903,56 @@
         "mmm",
         "ses",
         "www"
+      ],
+      "amount": 1
+    },
+    "sandstone_slab": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "sandstone"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 3,
+      "result": "stone_slab:1"
+    },
+    "wooden_slab": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "planks"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 3,
+      "result": "stone_slab:2"
+    },
+    "cobblestone_slab": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "cobblestone"
+      },
+      "shape": [
+        "xxx"
+      ],
+      "amount": 3,
+      "result": "stone_slab:3"
+    },
+    "redstone_repeater": {
+      "station": "crafting",
+      "shapeless": false,
+      "key": {
+        "x": "redstone_torch",
+        "z": "redstone",
+        "y": "stone"
+      },
+      "shape": [
+        "xzx",
+        "yyy"
       ],
       "amount": 1
     }

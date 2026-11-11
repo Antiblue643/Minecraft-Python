@@ -41,6 +41,7 @@ from game.rendering.view_culling import (
     chunk_load_radius, alpha_far_clip_for_chunk_radius,
     chunk_in_active_view as _chunk_in_active_view,
 )
+from game.rendering.gl_state import smooth_vertex_colors
 from engine.lighting import Lighting
 from engine.sky_math import sunrise_color
 from game.world.biomes import biome_sky_color
@@ -53,6 +54,8 @@ from game.world.nether_terrain import NetherTerrainGenerator, HELL_SEA_LEVEL
 
 DEBUG_WORLD_SEED_OVERRIDE: int | None = None
 
+BLOCK_LIGHT_RELIGHT_RADIUS = 14
+
 
 def _terrain_worker_limit(debug_world: bool, cpu_count=None) -> int:
     if debug_world:
@@ -63,6 +66,12 @@ def _terrain_worker_limit(debug_world: bool, cpu_count=None) -> int:
 
 _ENTITY_SPATIAL_CELL_SIZE = 8.0
 _ENTITY_SPATIAL_MIN_COUNT = 24
+
+_POPULATION_TILE_ENTITY_BLOCKS = frozenset((
+    "chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign",
+    "mob_spawner", "note_block",
+))
+_POPULATION_FLUID_BLOCKS = frozenset(("water", "lava"))
 
 
 class _ChunkSaveDeferred(RuntimeError):
@@ -119,6 +128,7 @@ class World:
         if seed is None and self._loaded_level_data is None and DEBUG_WORLD_SEED_OVERRIDE is not None:
             seed = int(DEBUG_WORLD_SEED_OVERRIDE)
         self.lighting = Lighting()
+        self.smooth_lighting_enabled = True
         Block._load_defs()
 
         self.debug_world = (
@@ -129,14 +139,14 @@ class World:
         if self._loaded_level_data is not None:
             if "McpyAccurateGeneration" in self._loaded_level_data:
                 self.accurate_generation = bool(
-                    self._loaded_level_data.get("McpyAccurateGeneration", True)
+                    self._loaded_level_data.get("McpyAccurateGeneration", False)
                 )
             else:
-                self.accurate_generation = True
+                self.accurate_generation = False
         elif accurate_generation is not None:
             self.accurate_generation = bool(accurate_generation)
         else:
-            self.accurate_generation = True
+            self.accurate_generation = False
         self._terrain_use_numba = (not self.accurate_generation) and bool(
             TERRAIN_NUMBA_AVAILABLE
         )
@@ -278,7 +288,9 @@ class World:
         self._placing_generated_features = False
         self._network_edit_depth = 0
         self._network_block_callback = None
+        self._network_bed_claim_callback = None
         self._network_world_event_callback = None
+        self._network_sleep_cycle_callback = None
         self._network_note_block_callback = None
         self._mp_suppress_world_events = False
         self._network_entity_spawn_callback = None
@@ -424,8 +436,11 @@ class World:
         return block_id
 
     def _get_chunk_index(self, x, z):
-        return (math.floor((x + 0.5) / self.CHUNK_SIZE),
-                math.floor((z + 0.5) / self.CHUNK_SIZE))
+        size = self.CHUNK_SIZE
+        if type(x) is int and type(z) is int:
+            return (x >> 4, z >> 4) if size == 16 else (x // size, z // size)
+        return (math.floor((x + 0.5) / size),
+                math.floor((z + 0.5) / size))
 
     def _chunk_load_radius(self):
         return chunk_load_radius(self.view_distance)
@@ -452,14 +467,20 @@ class World:
         if y < 0 or y >= self.CHUNK_HEIGHT:
             return None
 
-        chunk = self.chunks.get(((x + 0.5) // 16, (z + 0.5) // 16))
+        if type(x) is int and type(z) is int:
+            cx = x >> 4
+            cz = z >> 4
+        else:
+            cx = (x + 0.5) // 16
+            cz = (z + 0.5) // 16
+        chunk = self.chunks.get((cx, cz))
         if chunk is None:
             return None
         if type(chunk) is Chunk:
-            lx = x - chunk.start_x
-            lz = z - chunk.start_z
+            lx = int(x) - chunk.start_x
+            lz = int(z) - chunk.start_z
             if 0 <= lx < 16 and 0 <= lz < 16:
-                block_id = chunk.blocks[(lx * chunk.depth + lz) * chunk.height + y]
+                block_id = chunk.blocks[(lx * chunk.depth + lz) * chunk.height + int(y)]
                 return chunk._id_to_block_type[block_id] if block_id else None
         return chunk.get_block_type(x, y, z)
 
@@ -562,6 +583,20 @@ class World:
         if old_block_type in ("wooden_door", "iron_door") and block_type != old_block_type:
             door_y = y - 1 if (old_meta & 8) else y
             unregister_door_hinge(self, x, door_y, z)
+
+        if (
+            old_block_type == "bed"
+            and block_type != "bed"
+            and not getattr(self, "_breaking_bed_pair", False)
+            and not self._placing_generated_features
+        ):
+            self._breaking_bed_pair = True
+            try:
+                from game.block.bed import break_bed_pair
+                break_bed_pair(self, x, y, z)
+            finally:
+                self._breaking_bed_pair = False
+            return
 
         _TILE_ENTITY_BLOCKS = (
             "chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign", "mob_spawner", "note_block",
@@ -953,7 +988,9 @@ class World:
             skip_column_rebuild=True, changed_sections=changed_sections,
         )
         if recompute_block_light:
-            self._recompute_block_light_region(x, y, z, radius=12)
+            self._recompute_block_light_region(
+                x, y, z, radius=BLOCK_LIGHT_RELIGHT_RADIUS,
+            )
         else:
             self._mark_neighbors_dirty(x, y, z)
 
@@ -1283,7 +1320,9 @@ class World:
                 yield
 
 
-    def _recompute_block_light_region(self, x, y, z, radius=12):
+    def _recompute_block_light_region(
+        self, x, y, z, radius=BLOCK_LIGHT_RELIGHT_RADIUS,
+    ):
         radius = max(0, int(radius))
         y = int(y)
         if y + radius < 0 or y - radius >= self.CHUNK_HEIGHT:
@@ -1299,7 +1338,9 @@ class World:
         for _ in self._recompute_block_light_region_steps(x, y, z, radius=radius):
             pass
 
-    def _recompute_block_light_region_numba(self, x, y, z, radius=12):
+    def _recompute_block_light_region_numba(
+        self, x, y, z, radius=BLOCK_LIGHT_RELIGHT_RADIUS,
+    ):
         np = _lighting_np
         radius = max(0, int(radius))
         y = int(y)
@@ -1370,7 +1411,9 @@ class World:
                 chunk.mark_dirty_at(((y0 + int(j)) // section_height) * section_height)
         self._mark_neighbors_dirty(x, y, z)
 
-    def _recompute_block_light_region_steps(self, x, y, z, radius=12):
+    def _recompute_block_light_region_steps(
+        self, x, y, z, radius=BLOCK_LIGHT_RELIGHT_RADIUS,
+    ):
         radius = max(0, int(radius))
         y = int(y)
         if y + radius < 0 or y - radius >= self.CHUNK_HEIGHT:
@@ -1455,6 +1498,8 @@ class World:
                     continue
                 if ny < 0 or ny >= self.CHUNK_HEIGHT:
                     continue
+                if self.chunks.get(self._get_chunk_index(nx, nz)) is None:
+                    continue
                 opacity = self._opacity_at(nx, ny, nz)
                 if opacity == 0:
                     opacity = 1
@@ -1537,7 +1582,9 @@ class World:
             kind, x, y, z = self._light_queue.popleft()
             self._light_queue_set.discard((kind, x, y, z))
             if kind == "block":
-                self._recompute_block_light_region(x, y, z, radius=8)
+                self._recompute_block_light_region(
+                    x, y, z, radius=BLOCK_LIGHT_RELIGHT_RADIUS,
+                )
                 full_rebuilds += 1
             elif kind == "block_increase":
                 self._propagate_block_light_increase(x, y, z)
@@ -1964,11 +2011,54 @@ class World:
         self.spawn_entity(entity)
         return entity
 
+    def set_world_time(self, new_time):
+        old_time = int(getattr(self, "world_time", 0))
+        new_time = max(0, int(new_time))
+        delta = new_time - old_time
+        if delta:
+            for scheduler in (
+                getattr(self, "_block_updates", None),
+                getattr(self, "_fluid_scheduler", None),
+                getattr(self, "_redstone_system", None),
+            ):
+                shift = getattr(scheduler, "shift_world_time", None)
+                if callable(shift):
+                    shift(delta)
+
+            for tile_entity in getattr(self, "tile_entities", {}).values():
+                shift_te = getattr(tile_entity, "shift_world_time", None)
+                if callable(shift_te):
+                    shift_te(delta)
+                scheduled = getattr(tile_entity, "_scheduled_tick", None)
+                if scheduled is not None:
+                    tile_entity._scheduled_tick = int(scheduled) + delta
+
+        self.world_time = new_time
+        updater = getattr(self, "_update_skylight_subtracted", None)
+        if callable(updater):
+            updater()
+        if callable(getattr(self, "is_daytime", None)) and self.is_daytime():
+            wake = getattr(self, "_wake_all_sleeping_players", None)
+            if callable(wake):
+                wake()
+        return new_time
+
     def schedule_block_update(self, x, y, z, block_type, delay=None):
         from game.block.updates import TICK_RATES
         if delay is None:
             delay = TICK_RATES.get(block_type, 10)
         return self._block_updates.schedule(x, y, z, block_type, delay)
+
+    def _restore_saved_block_ticks(self, ticks):
+        if bool(getattr(self, "_multiplayer_client_world", False)):
+            return 0
+        restored = 0
+        for x, y, z, block_type, delay in ticks:
+            if self.get_block_type(x, y, z) != block_type:
+                continue
+            if self._block_updates.schedule(x, y, z, block_type, delay):
+                restored += 1
+        return restored
 
     def _run_block_updates(self):
         if bool(getattr(self, "_multiplayer_client_world", False)):
@@ -2185,9 +2275,17 @@ class World:
         self._vehicle_cache = None  
         self._rebuild_entity_spatial_index()
         client_world = bool(getattr(self, "_multiplayer_client_world", False))
+        from game.entities.mob import Mob
         if client_world:
-            from game.entities.mob import Mob
             from game.entities.item import ItemEntity
+        player = getattr(self, "player", None)
+        try:
+            px = float(player.pos[0]) if player is not None else 0.0
+            pz = float(player.pos[2]) if player is not None else 0.0
+        except Exception:
+            px = pz = 0.0
+        near_sq = 48.0 * 48.0
+        mid_sq = 80.0 * 80.0
         for entity in self.entities:
             if entity.dead:
                 self._sync_entity_spatial_index(entity)
@@ -2204,10 +2302,28 @@ class World:
                 self._sync_entity_spatial_index(entity)
                 continue
             if self._entity_chunk_loaded(entity):
-                entity.update(dt)
-                if entity is not getattr(self, "player", None) and not entity.dead:
-                    self._damage_entity_touching_cactus(entity, dt)
-            self._sync_entity_spatial_index(entity)
+                skip_full = False
+                if (
+                    player is not None
+                    and entity is not player
+                    and isinstance(entity, Mob)
+                ):
+                    dx = float(entity.pos[0]) - px
+                    dz = float(entity.pos[2]) - pz
+                    dist_sq = dx * dx + dz * dz
+                    tick_counter = int(getattr(entity, "_sim_lod_tick", 0)) + 1
+                    entity._sim_lod_tick = tick_counter
+                    if dist_sq > mid_sq:
+                        if tick_counter & 3:
+                            skip_full = True
+                    elif dist_sq > near_sq:
+                        if tick_counter & 1:
+                            skip_full = True
+                if not skip_full:
+                    entity.update(dt)
+                    if entity is not player and not entity.dead:
+                        self._damage_entity_touching_cactus(entity, dt)
+                    self._sync_entity_spatial_index(entity)
         if any(entity.dead for entity in self.entities):
             self.entities = [entity for entity in self.entities if not entity.dead]
         if getattr(self, "effects", None) is not None:
@@ -2220,9 +2336,12 @@ class World:
         camera_pos = getattr(player, "pos", (0.0, 64.0, 0.0))
         if renderer is not None:
             cx = float(getattr(renderer, "camX", camera_pos[0]))
+            cy = float(getattr(renderer, "camY", camera_pos[1]))
             cz = float(getattr(renderer, "camZ", camera_pos[2]))
         else:
-            cx, cz = float(camera_pos[0]), float(camera_pos[2])
+            cx = float(camera_pos[0])
+            cy = float(camera_pos[1])
+            cz = float(camera_pos[2])
         frustum = None
         if renderer is not None:
             try:
@@ -2230,32 +2349,53 @@ class World:
             except Exception:
                 frustum = None
         max_dist_sq = max_dist * max_dist
-        for entity in self.entities:
-            if entity.dead or not self._entity_chunk_loaded(entity):
-                continue
-            ex, ey, ez = (float(v) for v in entity.pos)
-            ecx, ecz = self._get_chunk_index(ex, ez)
-            if not self._chunk_in_active_view(ecx, ecz):
-                continue
-            dx, dz = ex - cx, ez - cz
-            if dx * dx + dz * dz > max_dist_sq:
-                continue
-            if frustum is not None:
-                size = getattr(entity, "size", (0.6, 1.8, 0.6))
-                try:
-                    half_x = max(0.05, float(size[0]) * 0.5)
-                    height = max(0.1, float(size[1]))
-                    half_z = max(0.05, float(size[2]) * 0.5)
-                    visible = frustum.intersects_aabb(
-                        ex - half_x, ey, ez - half_z,
-                        ex + half_x, ey + height, ez + half_z,
-                        padding=0.25,
-                    )
-                except Exception:
-                    visible = True
-                if not visible:
+        from game.entities.entity import Entity
+        Entity._entity_draw_lighting_batched = True
+        Entity._entity_shadow_camera = (cx, cy, cz)
+        try:
+            try:
+                from engine.legacy_lighting import (
+                    enable_standard_item_lighting,
+                    disable_standard_item_lighting,
+                )
+                enable_standard_item_lighting()
+                lighting_on = True
+            except Exception:
+                lighting_on = False
+            for entity in self.entities:
+                if entity.dead or not self._entity_chunk_loaded(entity):
                     continue
-            entity.draw()
+                ex, ey, ez = (float(v) for v in entity.pos)
+                ecx, ecz = self._get_chunk_index(ex, ez)
+                if not self._chunk_in_active_view(ecx, ecz):
+                    continue
+                dx, dz = ex - cx, ez - cz
+                if dx * dx + dz * dz > max_dist_sq:
+                    continue
+                if frustum is not None:
+                    size = getattr(entity, "size", (0.6, 1.8, 0.6))
+                    try:
+                        half_x = max(0.05, float(size[0]) * 0.5)
+                        height = max(0.1, float(size[1]))
+                        half_z = max(0.05, float(size[2]) * 0.5)
+                        visible = frustum.intersects_aabb(
+                            ex - half_x, ey, ez - half_z,
+                            ex + half_x, ey + height, ez + half_z,
+                            padding=0.25,
+                        )
+                    except Exception:
+                        visible = True
+                    if not visible:
+                        continue
+                entity.draw()
+            if lighting_on:
+                try:
+                    disable_standard_item_lighting()
+                except Exception:
+                    pass
+        finally:
+            Entity._entity_draw_lighting_batched = False
+            Entity._entity_shadow_camera = None
         try:
             from game.block.sign_renderer import draw_all_signs
             draw_all_signs(self, max_dist=max_dist)
@@ -2456,6 +2596,11 @@ class World:
                 values = saved_chunk.get(key_name, b"")
                 if len(values) == count:
                     getattr(chunk, attr)[:] = values
+            bed_id = self.block_type_to_id.get("bed")
+            if bed_id is not None:
+                for index, block_id in enumerate(chunk.blocks):
+                    if int(block_id) == int(bed_id) and (chunk.metadata[index] & 4):
+                        chunk.metadata[index] &= 0x0B
             heights = saved_chunk.get("heightmap", b"")
             if len(heights) == len(chunk.heightmap):
                 chunk.heightmap[:] = heights
@@ -2503,6 +2648,9 @@ class World:
         if getattr(self, "_redstone_system", None) is not None:
             self._redstone_system.on_chunk_loaded(chunk)
         self.profiler.record_since("chunk.integrate.redstone_index", started)
+
+        if saved_chunk is not None:
+            self._restore_saved_block_ticks(saved_chunk.get("tile_ticks", ()))
 
         started = time.perf_counter()
         self._fluid_scheduler.on_chunk_loaded(chunk)
@@ -2771,8 +2919,7 @@ class World:
                 load_started = time.perf_counter()
                 skip_load = False
                 if self.debug_world:
-                    path = self.save_store.chunk_path(int(cx), int(cz))
-                    if not path.is_file():
+                    if not self.save_store.chunk_exists(int(cx), int(cz)):
                         skip_load = True
                 if not skip_load:
                     saved_chunk = self.save_store.load_chunk(int(cx), int(cz))
@@ -3153,9 +3300,7 @@ class World:
                 return value
 
         try:
-            tile_entity_blocks = (
-                "chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign", "mob_spawner", "note_block",
-            )
+            tile_entity_blocks = _POPULATION_TILE_ENTITY_BLOCKS
             fluid_scheduler = self._fluid_scheduler
             ensure_block_id = self._ensure_block_type_id
             for (x, y, z), block_type in changes.items():
@@ -3203,25 +3348,25 @@ class World:
                 chunk.metadata[idx] = 0
                 if old_id != new_id:
                     chunk._mcpy_block_names.pop(idx, None)
-                self._note_fire_block_change(x, y, z, old_type, block_type)
+                if old_type == "fire" or block_type == "fire":
+                    self._note_fire_block_change(x, y, z, old_type, block_type)
                 queue_dirty(chunk_key, chunk, y)
 
                 cx, cz = chunk_key
-                lx, lz = x - cx * self.CHUNK_SIZE, z - cz * self.CHUNK_SIZE
+                size = self.CHUNK_SIZE
+                lx, lz = x - cx * size, z - cz * size
                 if lx == 0:
-                    neighbor_key = (cx - 1, cz)
-                    queue_dirty(neighbor_key, self.chunks.get(neighbor_key), y)
-                elif lx == self.CHUNK_SIZE - 1:
-                    neighbor_key = (cx + 1, cz)
-                    queue_dirty(neighbor_key, self.chunks.get(neighbor_key), y)
+                    queue_dirty((cx - 1, cz), self.chunks.get((cx - 1, cz)), y)
+                elif lx == size - 1:
+                    queue_dirty((cx + 1, cz), self.chunks.get((cx + 1, cz)), y)
                 if lz == 0:
-                    neighbor_key = (cx, cz - 1)
-                    queue_dirty(neighbor_key, self.chunks.get(neighbor_key), y)
-                elif lz == self.CHUNK_SIZE - 1:
-                    neighbor_key = (cx, cz + 1)
-                    queue_dirty(neighbor_key, self.chunks.get(neighbor_key), y)
+                    queue_dirty((cx, cz - 1), self.chunks.get((cx, cz - 1)), y)
+                elif lz == size - 1:
+                    queue_dirty((cx, cz + 1), self.chunks.get((cx, cz + 1)), y)
 
-                if fluid_scheduler is not None:
+                if (fluid_scheduler is not None
+                        and (old_type in _POPULATION_FLUID_BLOCKS
+                             or block_type in _POPULATION_FLUID_BLOCKS)):
                     fluid_scheduler.on_block_changed(x, y, z, old_type, block_type)
 
             for chunk_key, sections in dirty_sections_by_chunk.items():
@@ -3363,10 +3508,8 @@ class World:
                 and chunk.light_ready and chunk_key != target_key):
             relight.add(chunk_key)
 
-        tile_entity_blocks = (
-            "chest", "furnace", "furnace_lit", "dispenser", "sign", "wall_sign", "mob_spawner", "note_block",
-        )
-        if (old_type in tile_entity_blocks or block_type in tile_entity_blocks
+        if (old_type in _POPULATION_TILE_ENTITY_BLOCKS
+                or block_type in _POPULATION_TILE_ENTITY_BLOCKS
                 or old_type in _DOOR_BLOCKS or block_type in _DOOR_BLOCKS):
             self.set_block(x, y, z, block_type, meta=metadata)
             return
@@ -3378,25 +3521,32 @@ class World:
         chunk.metadata[idx] = metadata
         if old_id != new_id:
             chunk._mcpy_block_names.pop(idx, None)
-        self._note_fire_block_change(x, y, z, old_type, block_type)
+        if old_type == "fire" or block_type == "fire":
+            self._note_fire_block_change(x, y, z, old_type, block_type)
 
         self._queue_population_commit_dirty(state, chunk_key, chunk, y)
         cx, cz = chunk_key
-        lx, lz = x - cx * self.CHUNK_SIZE, z - cz * self.CHUNK_SIZE
+        size = self.CHUNK_SIZE
+        lx, lz = x - cx * size, z - cz * size
         if lx == 0:
-            neighbor_key = (cx - 1, cz)
-            self._queue_population_commit_dirty(state, neighbor_key, self.chunks.get(neighbor_key), y)
-        elif lx == self.CHUNK_SIZE - 1:
-            neighbor_key = (cx + 1, cz)
-            self._queue_population_commit_dirty(state, neighbor_key, self.chunks.get(neighbor_key), y)
+            self._queue_population_commit_dirty(
+                state, (cx - 1, cz), self.chunks.get((cx - 1, cz)), y,
+            )
+        elif lx == size - 1:
+            self._queue_population_commit_dirty(
+                state, (cx + 1, cz), self.chunks.get((cx + 1, cz)), y,
+            )
         if lz == 0:
-            neighbor_key = (cx, cz - 1)
-            self._queue_population_commit_dirty(state, neighbor_key, self.chunks.get(neighbor_key), y)
-        elif lz == self.CHUNK_SIZE - 1:
-            neighbor_key = (cx, cz + 1)
-            self._queue_population_commit_dirty(state, neighbor_key, self.chunks.get(neighbor_key), y)
+            self._queue_population_commit_dirty(
+                state, (cx, cz - 1), self.chunks.get((cx, cz - 1)), y,
+            )
+        elif lz == size - 1:
+            self._queue_population_commit_dirty(
+                state, (cx, cz + 1), self.chunks.get((cx, cz + 1)), y,
+            )
 
-        if (old_type in ("water", "lava") or block_type in ("water", "lava")):
+        if (old_type in _POPULATION_FLUID_BLOCKS
+                or block_type in _POPULATION_FLUID_BLOCKS):
             fluid_scheduler = self._fluid_scheduler
             if fluid_scheduler is not None:
                 fluid_scheduler.on_block_changed(x, y, z, old_type, block_type)
@@ -3419,20 +3569,19 @@ class World:
         if backlog >= 4:
             max_ops = max(max_ops, 256)
             budget_ms = max(budget_ms, 3.5)
+        apply_op = self._apply_population_commit_operation
+        operations = state["operations"]
+        self._placing_generated_features = True
         try:
             while (processed < max_ops
                    and (time.perf_counter() - started) * 1000.0
                    < budget_ms):
                 try:
-                    kind, item = next(state["operations"])
+                    kind, item = next(operations)
                 except StopIteration:
                     state["exhausted"] = True
                     break
-                self._placing_generated_features = True
-                try:
-                    self._apply_population_commit_operation(state, kind, item)
-                finally:
-                    self._placing_generated_features = previous_placing
+                apply_op(state, kind, item)
                 processed += 1
                 state["processed_operations"] += 1
         finally:
@@ -3653,6 +3802,7 @@ class World:
             chunk.blocklight = bytearray(chunk.width * chunk.depth * height)
             chunk.light_ready = True
             self.note_chunk_mesh_dirty((chunk.cx, chunk.cz))
+            self._invalidate_loaded_chunk_neighbors(chunk.cx, chunk.cz)
             return
         chunk.compute_heightmap_and_skylight()
         if self.is_hell_world:
@@ -3662,6 +3812,7 @@ class World:
         self._flood_block_light_chunk(chunk)
         self._reconcile_loaded_chunk_lighting(chunk)
         self.note_chunk_mesh_dirty((chunk.cx, chunk.cz))
+        self._invalidate_loaded_chunk_neighbors(chunk.cx, chunk.cz)
 
     def _propagate_skylight_chunk(self, chunk):
         if LIGHTING_NUMBA_AVAILABLE:
@@ -3971,7 +4122,7 @@ class World:
         return (
             definition.get("model", "cube") == "cube"
             and definition.get("nCull", "all") == "all"
-            and not definition.get("intangible", False)
+            and definition.get("collision", True) is not False
             and not definition.get("transparent", False)
         )
 
@@ -4023,6 +4174,11 @@ class World:
             self._mark_chunk_dirty(cx, cz - 1, y=y)
         elif lz == self.CHUNK_SIZE - 1:
             self._mark_chunk_dirty(cx, cz + 1, y=y)
+
+        edge_dx = -1 if lx == 0 else (1 if lx == self.CHUNK_SIZE - 1 else 0)
+        edge_dz = -1 if lz == 0 else (1 if lz == self.CHUNK_SIZE - 1 else 0)
+        if edge_dx and edge_dz:
+            self._mark_chunk_dirty(cx + edge_dx, cz + edge_dz, y=y)
 
     def _mark_chunk_dirty(self, cx, cz, y=None):
         chunk = self.chunks.get((cx, cz))
@@ -4184,6 +4340,27 @@ class World:
         factor = 1.0 - (math.cos(angle * math.pi * 2.0) * 2.0 + 0.5)
         factor = max(0.0, min(1.0, factor))
         return int(factor * 11.0)
+
+    def is_daytime(self) -> bool:
+        if self.is_hell_world:
+            return False
+        return int(getattr(self.lighting, "skylight_subtracted", 0)) < 4
+
+    def _sleep_cycle_players(self):
+        from game.sleep_cycle import sleep_cycle_players
+        return sleep_cycle_players(self)
+
+    def update_all_players_sleeping_flag(self) -> bool:
+        from game.sleep_cycle import update_all_players_sleeping_flag
+        return update_all_players_sleeping_flag(self)
+
+    def _wake_all_sleeping_players(self) -> None:
+        from game.sleep_cycle import wake_all_sleeping_players
+        wake_all_sleeping_players(self)
+
+    def _try_skip_night(self) -> None:
+        from game.sleep_cycle import try_skip_night
+        try_skip_night(self)
 
     def get_render_skylight_subtracted(self, partial_ticks=None):
         if self.is_hell_world:
@@ -4402,6 +4579,7 @@ class World:
                 self._tick_accum -= 0.05
                 self.world_time += 1
                 ticks += 1
+                self._try_skip_night()
                 if getattr(self, "_cloud_renderer", None) is not None:
                     self._cloud_renderer.update()
                 else:
@@ -4499,8 +4677,11 @@ class World:
                 continue
             unload_candidates.append((dx * dx + dz * dz, key))
         if unload_candidates:
-            _distance_squared, unload_key = max(unload_candidates)
-            self._unload_chunk(*unload_key)
+            unload_candidates.sort(key=lambda item: item[0], reverse=True)
+            excess = len(unload_candidates)
+            budget = 1 if excess <= 2 else min(16, 2 + excess // 3)
+            for _distance_squared, unload_key in unload_candidates[:budget]:
+                self._unload_chunk(*unload_key)
 
         network_stream_keys = getattr(self, "_mp_chunk_stream_keys", set())
         for key, future in list(self._terrain_futures.items()):
@@ -4511,6 +4692,7 @@ class World:
                 self._chunk_save_wait_started.pop(key, None)
                 self._terrain_requested_at.pop(key, None)
                 self._terrain_ready_at.pop(key, None)
+
 
         self._process_deferred_natural_light_changes()
 
@@ -4588,6 +4770,16 @@ class World:
         if self.headless:
             return
         self._draw_aspect = aspect
+        if self._center_chunk is None:
+            viewer_pos = getattr(self, "_particle_viewer_pos", None)
+            if viewer_pos is not None:
+                self._center_chunk = self._get_chunk_index(
+                    viewer_pos[0], viewer_pos[2],
+                )
+            else:
+                self._center_chunk = getattr(
+                    self, "_initial_center_chunk", (0, 0),
+                )
         center_chunk = self.chunks.get(self._center_chunk)
         section_height = (
             center_chunk.section_height if center_chunk is not None else 16
@@ -4680,7 +4872,8 @@ class World:
             event_details={"loaded_chunks": len(self.chunks), "visible_chunks": len(batch)},
         )
         self._visible_batch = batch
-        Chunk.draw_batch(batch, phase="opaque")
+        with smooth_vertex_colors():
+            Chunk.draw_batch(batch, phase="opaque")
 
     def _cull_geometry(self, active_keys):
         geom = getattr(self, "_cull_geom", None)
@@ -4709,26 +4902,12 @@ class World:
             self._cull_geom = None
             return None
         cs = self.CHUNK_SIZE
-        if all(hasattr(c, "_gb_arr") for c in chunks):
-            bounds = _np.stack([c._gb_arr for c in chunks])
-            has = _np.stack([c._gb_has for c in chunks])
-        else:
-            bounds = _np.zeros((len(chunks), section_count, 6), dtype=_np.float64)
-            has = _np.zeros((len(chunks), section_count), dtype=_np.bool_)
-            for ci, c in enumerate(chunks):
-                for si, section in enumerate(c._sections):
-                    b = section.get("greedy_bounds")
-                    if b is not None:
-                        bounds[ci, si, :] = b
-                        has[ci, si] = True
         geom = {
             "keys": active_keys,
             "chunks": chunks,
             "empty": False,
             "x0": _np.array([cx * cs for cx, _cz in keys], dtype=_np.float64),
             "z0": _np.array([cz * cs for _cx, cz in keys], dtype=_np.float64),
-            "bounds": bounds,
-            "has": has,
             "masks": _np.zeros(len(chunks), dtype=_np.int64),
             "section_count": section_count,
             "section_height": section_height,
@@ -4746,7 +4925,7 @@ class World:
         masks = geom["masks"]
         cull_section_masks(
             _np.asarray(frustum.planes, dtype=_np.float64),
-            geom["x0"], geom["z0"], geom["bounds"], geom["has"],
+            geom["x0"], geom["z0"],
             geom["section_count"], geom["section_height"],
             self.CHUNK_HEIGHT, self.CHUNK_SIZE, 2.0, masks,
         )
@@ -4764,23 +4943,17 @@ class World:
             if chunk is None:
                 continue
             cx, cz = key
-            greedy_bounds = tuple(
-                section.get("greedy_bounds")
-                for section in chunk._sections
-            )
             if not chunk_in_frustum(
                 frustum, cx, cz,
                 chunk_size=self.CHUNK_SIZE,
                 world_height=self.CHUNK_HEIGHT,
                 padding=2.0,
-                extra_bounds=greedy_bounds,
             ):
                 continue
             sections = visible_chunk_sections(
                 frustum, cx, cz, chunk_size=self.CHUNK_SIZE,
                 world_height=self.CHUNK_HEIGHT,
                 section_height=chunk.section_height, padding=2.0,
-                section_bounds=greedy_bounds,
             )
             if sections:
                 batch.append((chunk, sections))
@@ -4790,7 +4963,8 @@ class World:
         batch = getattr(self, "_visible_batch", None)
         self._visible_batch = None
         if batch:
-            Chunk.draw_batch(batch, phase="transparent")
+            with smooth_vertex_colors():
+                Chunk.draw_batch(batch, phase="transparent")
 
     def _chunk_in_view(self, cx, cz, aspect=16 / 9, frustum=None):
         if frustum is None:

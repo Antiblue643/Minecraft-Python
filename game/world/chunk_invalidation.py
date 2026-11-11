@@ -50,6 +50,33 @@ def mark_chunk_boundary_dirty(chunk, edge):
     return len(dirty)
 
 
+def mark_chunk_corner_dirty(chunk, lx, lz):
+    blocks = getattr(chunk, "blocks", None)
+    if blocks is None:
+        chunk.mark_all_dirty()
+        return len(getattr(chunk, "dirty_sections", ()))
+
+    height, depth = chunk.height, chunk.depth
+    section_height = max(1, int(getattr(chunk, "section_height", 16)))
+    section_count = int(getattr(
+        chunk, "section_count", (height + section_height - 1) // section_height,
+    ))
+    air_ids = {0, int(getattr(chunk, "_block_type_to_id", {}).get("air", 0))}
+    base = (int(lx) * depth + int(lz)) * height
+    mark_section = getattr(chunk, "_mark_section_dirty", None)
+    marked = 0
+    for section_idx in range(section_count):
+        y0 = section_idx * section_height
+        y1 = min(height, y0 + section_height)
+        if any(blocks[base + y] not in air_ids for y in range(y0, y1)):
+            if mark_section is not None:
+                mark_section(section_idx)
+            else:
+                chunk.mark_dirty_at(y0)
+            marked += 1
+    return marked
+
+
 def invalidate_loaded_chunk_neighbors(chunks, cx, cz):
     neighbors = (
         ((cx - 1, cz), "east"),
@@ -63,3 +90,13 @@ def invalidate_loaded_chunk_neighbors(chunks, cx, cz):
             continue
         if neighbor._has_mesh or len(neighbor.dirty_sections) < neighbor.section_count:
             mark_chunk_boundary_dirty(neighbor, edge)
+
+    for dx in (-1, 1):
+        for dz in (-1, 1):
+            neighbor = chunks.get((cx + dx, cz + dz))
+            if neighbor is None:
+                continue
+            if neighbor._has_mesh or len(neighbor.dirty_sections) < neighbor.section_count:
+                lx = neighbor.width - 1 if dx < 0 else 0
+                lz = neighbor.depth - 1 if dz < 0 else 0
+                mark_chunk_corner_dirty(neighbor, lx, lz)

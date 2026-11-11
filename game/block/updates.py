@@ -37,6 +37,31 @@ class BlockUpdateScheduler:
         self._pending.add(key)
         return True
 
+    def pending_for_chunk(self, cx, cz):
+        world = self.world
+        now = int(world.world_time)
+        chunk_key = (int(cx), int(cz))
+        result = []
+        for due, _seq, key in sorted(self._heap):
+            if key not in self._pending:
+                continue
+            x, y, z, block_type = key
+            if world._get_chunk_index(x, z) != chunk_key:
+                continue
+            result.append((x, y, z, block_type, max(0, int(due) - now)))
+        return result
+
+    def shift_world_time(self, delta):
+        delta = int(delta)
+        if not delta or not self._heap:
+            return 0
+        self._heap = [
+            (due + delta, sequence, key)
+            for due, sequence, key in self._heap
+        ]
+        heapq.heapify(self._heap)
+        return len(self._heap)
+
     def process_due(self, handlers, limit=MAX_UPDATES_PER_TICK):
         world = self.world
         now = int(world.world_time)

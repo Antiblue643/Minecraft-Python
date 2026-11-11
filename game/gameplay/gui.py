@@ -11,10 +11,12 @@ import pygame as pg
 from OpenGL.GL import (
     glEnable, glDisable, glBindTexture, glBegin, glEnd,
     glTexCoord2f, glVertex2f, glColor4f, glColor3f,
-    GL_TEXTURE_2D, GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+    GL_TEXTURE_2D, GL_BLEND, GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE,
+    GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
     GL_ONE_MINUS_DST_COLOR, GL_ONE_MINUS_SRC_COLOR, GL_ZERO,
-    GL_CULL_FACE, GL_LIGHTING,
-    glBlendFunc, GL_QUADS, GL_LINES, GL_LINE_STRIP,
+    GL_CULL_FACE, GL_LIGHTING, GL_ALL_ATTRIB_BITS,
+    glPushAttrib, glPopAttrib,
+    glBlendFunc, glTexEnvi, GL_QUADS, GL_LINES, GL_LINE_STRIP,
     GL_ALPHA_TEST, glAlphaFunc, GL_GREATER, GL_DEPTH_TEST, GL_REPEAT,
     glPushMatrix, glPopMatrix, glTranslatef, glScalef, glDepthMask, glIsEnabled,
     GL_ARRAY_BUFFER, GL_STREAM_DRAW, GL_FLOAT, GL_VERTEX_ARRAY, GL_COLOR_ARRAY,
@@ -77,8 +79,13 @@ class Gui:
         if not title:
             return
 
+        mod_name = Item.mod_name(stack.id)
+        mod_line = "\u00a75" + mod_name if mod_name else None
+
         display = self.display
         text_width = display.string_width(title)
+        if mod_line:
+            text_width = max(text_width, display.string_width(mod_line))
         tx = int(mouse_x) + 12
         ty = int(mouse_y) - 12
 
@@ -98,7 +105,7 @@ class Gui:
             glEnable(GL_BLEND)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
             x0, y0 = tx - 3, ty - 3
-            x1, y1 = tx + text_width + 3, ty + 11
+            x1, y1 = tx + text_width + 3, ty + 11 + (10 if mod_line else 0)
             glBegin(GL_QUADS)
             glColor4f(0.0, 0.0, 0.0, 192.0 / 255.0)
             glVertex2f(x0, y0)
@@ -110,6 +117,10 @@ class Gui:
             display.draw_string(
                 title, (tx, ty), (255, 255, 255), 1.0, shadow=True,
             )
+            if mod_line:
+                display.draw_string(
+                    mod_line, (tx, ty + 10), (255, 255, 255), 1.0, shadow=True,
+                )
         finally:
             glColor4f(1.0, 1.0, 1.0, 1.0)
             for capability, was_enabled in previous:
@@ -184,14 +195,12 @@ class Gui:
 
     def _draw_block_shape_icon(self, item, x, y, size, surfaces):
         definition = Item.block_defs.get(item.id, {})
-        faces = Item.block_faces(item.id, getattr(item, "damage", 0))
-
         def atlas_for(slot):
-            if isinstance(faces, list):
-                if slot == 3 and item.id == "grass_block":
-                    return faces[0]
-                return faces[slot] if slot < len(faces) else faces[0]
-            return faces
+            return Item.block_face_texture(
+                item.id, slot, getattr(item, "damage", 0),
+            )
+
+        tint_item_id = getattr(item, "tint_item_id", item.id)
 
         Item.block_texture.bind()
         glEnable(GL_TEXTURE_2D)
@@ -202,7 +211,14 @@ class Gui:
             cactus_span = cactus_high - cactus_low
             for slot, normal, points, shade in surfaces:
                 atlas_idx = atlas_for(slot)
-                glColor4f(shade, shade, shade, 1.0)
+                face_tint = Item.block_item_tint(
+                    tint_item_id, getattr(item, "damage", 0), slot=slot,
+                )
+                tint_rgb = tuple(channel / 255.0 for channel in face_tint)
+                glColor4f(
+                    shade * tint_rgb[0], shade * tint_rgb[1],
+                    shade * tint_rgb[2], 1.0,
+                )
                 for point in points:
                     uv_point = point
                     if is_cactus:
@@ -294,14 +310,12 @@ class Gui:
     def begin_flat_icon_batch(self):
         depth = int(getattr(self, "_flat_icon_batch_depth", 0))
         if depth == 0:
-            states = (
-                (GL_CULL_FACE, bool(glIsEnabled(GL_CULL_FACE))),
-                (GL_DEPTH_TEST, bool(glIsEnabled(GL_DEPTH_TEST))),
-                (GL_LIGHTING, bool(glIsEnabled(GL_LIGHTING))),
-            )
-            self._flat_icon_batch_states = states
-            for capability, _ in states:
-                glDisable(capability)
+            glPushAttrib(GL_ALL_ATTRIB_BITS)
+            self._flat_icon_batch_states = True
+            glDisable(GL_CULL_FACE)
+            glDisable(GL_DEPTH_TEST)
+            glDisable(GL_LIGHTING)
+            glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
         self._flat_icon_batch_depth = depth + 1
 
     def end_flat_icon_batch(self):
@@ -312,9 +326,8 @@ class Gui:
         self._flat_icon_batch_depth = depth
         if depth != 0:
             return
-        states = getattr(self, "_flat_icon_batch_states", None) or ()
-        for capability, was_enabled in states:
-            (glEnable if was_enabled else glDisable)(capability)
+        if getattr(self, "_flat_icon_batch_states", False):
+            glPopAttrib()
         self._flat_icon_batch_states = None
 
     def _with_flat_icon_state(self, draw_func, *args):
@@ -370,6 +383,15 @@ class Gui:
         glEnable(GL_ALPHA_TEST)
         glAlphaFunc(GL_GREATER, 0.01)
         glColor4f(1.0, 1.0, 1.0, 1.0)
+
+        if item.id in ("redstone_repeater", "bed"):
+            block_item = Item.block_defs.get(item.id, {}).get("blockitem", {})
+            item_def = Item.item_defs.get(item.id, {})
+            atlas_index = item_def.get("texture", block_item.get("texture"))
+            if atlas_index is not None and Item.item_texture is not None:
+                self._draw_item_atlas_icon_impl(int(atlas_index), x, y, size)
+                self._draw_durability_bar(item, x, y, size)
+            return
 
         item_defn = Item.item_defs.get(item.id) if item.id in Item.item_defs else None
         if item_defn is not None and "texture" in item_defn and Item.item_texture is not None:
@@ -863,12 +885,47 @@ class Gui:
         else:
             seed_line = f"seed: {int(world_seed)}"
 
+        entity_line = "entities: ?"
+        try:
+            entities = list(getattr(world, "entities", ()) or ())
+            total = len(entities)
+            living = 0
+            hostile = 0
+            loaded = 0
+            for ent in entities:
+                if getattr(ent, "dead", False):
+                    continue
+                if bool(getattr(ent, "is_living_entity", False)):
+                    living += 1
+                if bool(getattr(ent, "is_hostile", False)):
+                    hostile += 1
+                chunk_loaded = getattr(world, "_entity_chunk_loaded", None)
+                if callable(chunk_loaded):
+                    if chunk_loaded(ent):
+                        loaded += 1
+                else:
+                    loaded += 1
+            paused = ""
+            try:
+                from game.entities.mob import Mob
+                if Mob.global_ai_paused:
+                    paused = "  AI:PAUSED"
+            except Exception:
+                pass
+            entity_line = (
+                f"entities: {total}  living: {living}  hostile: {hostile}  "
+                f"loaded: {loaded}{paused}"
+            )
+        except Exception:
+            pass
+
         lines = [
             "",  
             f"x: {x:.2f}",
             f"y: {y:.2f}",
             f"z: {z:.2f}",
             seed_line,
+            entity_line,
             f"yaw: {yaw:.1f}  pitch: {pitch:.1f}",
             f"facing: {facing}",
             f"feet light c/s/b: {feet_c}/{feet_s}/{feet_b}",
@@ -1246,7 +1303,40 @@ class Gui:
         glDisable(GL_BLEND)
         glColor4f(1.0, 1.0, 1.0, 1.0)
 
+    def draw_sleep_overlay(self, player):
+        if player is None:
+            return
+        timer = int(getattr(player, "sleep_timer", 0) or 0)
+        if timer <= 0:
+            return
+        if timer <= 100:
+            progress = timer / 100.0
+        else:
+            progress = 1.0 - (timer - 100) / 10.0
+        progress = max(0.0, min(1.0, float(progress)))
+        if progress <= 0.0:
+            return
+        alpha = (220.0 / 255.0) * progress
+        w = int(self.display.width)
+        h = int(self.display.height)
+        glDisable(GL_TEXTURE_2D)
+        glDisable(GL_ALPHA_TEST)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glColor4f(16.0 / 255.0, 16.0 / 255.0, 16.0 / 255.0, alpha)
+        glBegin(GL_QUADS)
+        glVertex2f(0, 0)
+        glVertex2f(w, 0)
+        glVertex2f(w, h)
+        glVertex2f(0, h)
+        glEnd()
+        glColor4f(1.0, 1.0, 1.0, 1.0)
+        glDisable(GL_BLEND)
+        glEnable(GL_ALPHA_TEST)
+        glEnable(GL_TEXTURE_2D)
+
     def draw_actionbar(self, player):
+
         message = str(getattr(player, "_actionbar_message", "") or "")
         if not message:
             return
@@ -1258,10 +1348,15 @@ class Gui:
             player._actionbar_message = ""
             return
 
-        style = record_notification_style(remaining)
-        if style is None:
-            return
-        color, alpha = style
+        style_kind = str(getattr(player, "_actionbar_style", "record") or "record")
+        if style_kind == "plain":
+            alpha = 1.0 if remaining > 1.0 else max(0.0, remaining)
+            color = (255, 255, 255)
+        else:
+            style = record_notification_style(remaining)
+            if style is None:
+                return
+            color, alpha = style
 
         logical_width = self.display.string_width(message) + 1
         x, y, scale = record_notification_layout(
@@ -1306,6 +1401,7 @@ class Gui:
         if player is not None:
             self.draw_hotbar(player.inventory, partial=partial)
             self.draw_actionbar(player)
+            self.draw_sleep_overlay(player)
         self.draw_chat()
         self.draw_debug(player, world, fps, sound_debug_line=sound_debug_line)
         self.draw_version()

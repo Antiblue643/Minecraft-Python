@@ -1,0 +1,7 @@
+{
+  "id": "aod",
+  "entry": "mod.py",
+  "default_enabled": false,
+  "content_heavy": true,
+  "multiplayer_compatible": false
+}

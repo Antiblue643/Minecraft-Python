@@ -42,8 +42,11 @@ class Entity:
     world = None
     renderer = None
     sound_player = None
+    _next_entity_id = 0
 
     def __init__(self, pos, size=(0.6, 1.8, 0.6)):
+        self.entity_id = Entity._next_entity_id
+        Entity._next_entity_id += 1
         self.pos = list(pos)
         self.vel = [0.0, 0.0, 0.0]
         self.size = size
@@ -261,38 +264,46 @@ class Entity:
         if block_type is None:
             return False
         solid = _SOLID_BY_TYPE.get(block_type)
-        if solid is None:
-            block = world.get_block(bx, by, bz)
-            if block is None:
-                return False
-            collision = getattr(block, "collision", None)
-            if collision is False:
-                solid = False
-            elif collision is True:
-                solid = True
-            else:
-                solid = not getattr(block, "intangible", False)
-            _SOLID_BY_TYPE[block_type] = solid
+        if solid is not None:
+            return solid
+        try:
+            from game.block import Block
+            Block._load_defs()
+            definition = Block._block_defs.get(block_type) or {}
+        except Exception:
+            definition = {}
+        collision = definition.get("collision")
+        if collision is False:
+            solid = False
+        elif collision is True:
+            solid = True
+        elif isinstance(collision, (list, tuple)):
+            solid = True
+        else:
+            solid = True
+        _SOLID_BY_TYPE[block_type] = solid
         return solid
 
     def _is_opaque_at(self, bx, by, bz):
         if Entity.world is None:
             return False
-        if Entity.world.get_block_type(bx, by, bz) is None:
+        block_type = Entity.world.get_block_type(bx, by, bz)
+        if block_type is None:
             return False
-        block = Entity.world.get_block(bx, by, bz)
-        if block is None:
+        try:
+            from game.block import Block
+            Block._load_defs()
+            definition = Block._block_defs.get(block_type) or {}
+        except Exception:
+            definition = {}
+        if definition.get("opaque") is False:
             return False
-        if getattr(block, "opaque", None) is False:
-            return False
-        if getattr(block, "intangible", False):
-            return False
-        model = getattr(block, "model_name", None) or getattr(block, "model", "cube")
+        model = definition.get("model", "cube")
         if model not in ("cube", None):
             return False
-        if getattr(block, "transparent", False):
+        if definition.get("transparent", False):
             return False
-        n_cull = getattr(block, "nCull", None) or getattr(block, "n_cull", "all")
+        n_cull = definition.get("nCull", "all")
         if n_cull not in ("all", None):
             return False
         return self._solid_at(bx, by, bz)
@@ -398,12 +409,19 @@ class Entity:
         if block_type is None:
             return False
         is_liquid = _LIQUID_BY_TYPE.get(block_type)
-        if is_liquid is None:
-            block = world.get_block(bx, by, bz)
-            if block is None:
-                return False
-            is_liquid = getattr(block, "model_name", None) == "liquid"
-            _LIQUID_BY_TYPE[block_type] = is_liquid
+        if is_liquid is not None:
+            return is_liquid
+        if block_type in _WATER_TYPES or block_type in _LAVA_TYPES:
+            is_liquid = True
+        else:
+            try:
+                from game.block import Block
+                Block._load_defs()
+                definition = Block._block_defs.get(block_type) or {}
+                is_liquid = definition.get("model") == "liquid"
+            except Exception:
+                is_liquid = False
+        _LIQUID_BY_TYPE[block_type] = is_liquid
         return is_liquid
 
     def _overlaps_aabb_at(self, px, py, pz, aabb):
@@ -985,6 +1003,31 @@ class Entity:
         dt = min(dt, MAX_DT)
         ticks = dt * TICKS_PER_SECOND
         self.portal_cooldown = max(0.0, self.portal_cooldown - ticks)
+
+        heading_ax, heading_az = getattr(self, "_heading_accel", (0.0, 0.0))
+        resting = (
+            self.on_ground
+            and not self.in_water
+            and not self.in_lava
+            and not self.on_ladder
+            and not self.in_portal
+            and abs(self.vel[0]) < 1e-4
+            and abs(self.vel[1]) < 1e-4
+            and abs(self.vel[2]) < 1e-4
+            and abs(heading_ax) < 1e-8
+            and abs(heading_az) < 1e-8
+            and not self.jump_requested
+            and not self.climb_requested
+        )
+        if resting:
+            self.vel[0] = 0.0
+            self.vel[1] = 0.0
+            self.vel[2] = 0.0
+            self.horizontal_collision = False
+            self.vertical_collision = False
+            self._blocked_down = True
+            return
+
         previously_in_water = bool(self.in_water)
         self._check_water()
         self._check_ladder()

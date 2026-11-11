@@ -1,10 +1,12 @@
 import math
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pygame as pg
@@ -23,7 +25,7 @@ _LOGO_TEXTURE_PATH = "game/textures/gui/logo.png"
 
 _BG_TOP = 0xC0101010
 _BG_BOTTOM = 0xD0303030
-VERSION_TEXT = "Beta 1.2_02"
+VERSION_TEXT = "Beta 1.3_01"
 _LOG = logging.getLogger(__name__)
 
 def _rgb(color):
@@ -58,6 +60,98 @@ def draw_gradient_rect(x1, y1, x2, y2, top_argb, bottom_argb):
     glVertex2f(x2, y2)
     glEnd()
     glDisable(GL_BLEND)
+
+
+def _scrollbar_metrics(width, list_top, list_bottom, viewport_height, max_scroll,
+                       scroll, *, min_thumb=32):
+    max_scroll = max(0, int(max_scroll))
+    track_top = int(list_top)
+    track_bottom = int(list_bottom)
+    track_height = max(0, track_bottom - track_top)
+    viewport_height = max(0, int(viewport_height))
+    if max_scroll <= 0 or track_height <= 8 or viewport_height <= 0:
+        return None
+
+    content_height = max(1, viewport_height + max_scroll)
+    thumb_height = (track_height * track_height) // content_height
+    thumb_height = max(int(min_thumb), thumb_height)
+    thumb_height = min(track_height - 8, thumb_height)
+    travel = max(0, track_height - thumb_height)
+    clamped_scroll = max(0, min(max_scroll, int(scroll)))
+    thumb_top = track_top + (clamped_scroll * travel) // max_scroll
+    return {
+        "x": int(width) // 2 + 124,
+        "width": 6,
+        "track_top": track_top,
+        "track_bottom": track_bottom,
+        "thumb_top": thumb_top,
+        "thumb_bottom": thumb_top + thumb_height,
+        "thumb_height": thumb_height,
+        "travel": travel,
+        "max_scroll": max_scroll,
+    }
+
+
+def _draw_list_scrollbar(width, list_top, list_bottom, viewport_height,
+                         max_scroll, scroll):
+    metrics = _scrollbar_metrics(
+        width, list_top, list_bottom, viewport_height, max_scroll, scroll,
+    )
+    if metrics is None:
+        return None
+
+    glPushAttrib(GL_ALL_ATTRIB_BITS)
+    try:
+        x = metrics["x"]
+        right = x + metrics["width"]
+        track_top, track_bottom = metrics["track_top"], metrics["track_bottom"]
+        thumb_top, thumb_bottom = metrics["thumb_top"], metrics["thumb_bottom"]
+        glDisable(GL_TEXTURE_2D)
+        glDisable(GL_LIGHTING)
+        glDisable(GL_FOG)
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_ALPHA_TEST)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glShadeModel(GL_FLAT)
+
+        glColor4f(0.0, 0.0, 0.0, 1.0)
+        glBegin(GL_QUADS)
+        glVertex2f(x, track_top)
+        glVertex2f(right, track_top)
+        glVertex2f(right, track_bottom)
+        glVertex2f(x, track_bottom)
+        glEnd()
+
+        glColor4f(128.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0, 1.0)
+        glBegin(GL_QUADS)
+        glVertex2f(x, thumb_top)
+        glVertex2f(right, thumb_top)
+        glVertex2f(right, thumb_bottom)
+        glVertex2f(x, thumb_bottom)
+        glEnd()
+
+        glColor4f(192.0 / 255.0, 192.0 / 255.0, 192.0 / 255.0, 1.0)
+        glBegin(GL_QUADS)
+        glVertex2f(x, thumb_top)
+        glVertex2f(right - 1, thumb_top)
+        glVertex2f(right - 1, thumb_bottom - 1)
+        glVertex2f(x, thumb_bottom - 1)
+        glEnd()
+    finally:
+        glPopAttrib()
+    return metrics
+
+def _scrollbar_scroll_from_y(metrics, y, drag_offset):
+    if not metrics or metrics["travel"] <= 0 or metrics["max_scroll"] <= 0:
+        return 0
+    thumb_top = float(y) - float(drag_offset)
+    thumb_top = max(
+        metrics["track_top"],
+        min(metrics["track_top"] + metrics["travel"], thumb_top),
+    )
+    fraction = (thumb_top - metrics["track_top"]) / metrics["travel"]
+    return int(round(fraction * metrics["max_scroll"]))
 
 
 def draw_texture_pack_list_edge_fades(width, list_top, list_bottom):
@@ -218,14 +312,27 @@ class GuiButton:
         draw_tex_rect(tex, self.x, self.y, 0, v, half, self.height)
         draw_tex_rect(tex, self.x + half, self.y, 200 - half, v, half, self.height)
         text_y = self.y + (self.height - 8) // 2
-        draw_centered_string(mc.display, self.text, self.x + half, text_y, color)
+        label = self._fitted_text(mc, self.text)
+        draw_centered_string(mc.display, label, self.x + half, text_y, color)
         if self.colored_suffix:
-            text_x = self.x + half - mc.display.string_width(self.text) // 2
+            text_x = self.x + half - mc.display.string_width(label) // 2
             draw_string(
                 mc.display, self.colored_suffix,
-                text_x + mc.display.string_width(self.text) + 2, text_y,
+                text_x + mc.display.string_width(label) + 2, text_y,
                 self.suffix_color,
             )
+
+    def _fitted_text(self, mc, text):
+        limit = self.width - 6
+        if self.colored_suffix:
+            limit -= mc.display.string_width(self.colored_suffix) + 2
+        width_of = mc.display.string_width
+        if width_of(text) <= limit:
+            return text
+        ellipsis = "..."
+        while text and width_of(text + ellipsis) > limit:
+            text = text[:-1]
+        return text.rstrip() + ellipsis
 
     def mouse_pressed(self, mx, my):
         return self.enabled and self.visible and self._contains(mx, my)
@@ -468,57 +575,61 @@ class GuiIngameMenu(GuiScreen):
         super().draw_screen(mx, my)
 
 class GuiOptions(GuiScreen):
+    GENERAL_OPTION_INDICES = (0, 1, 3, 2, 9)
+
     def __init__(self, parent, settings):
         super().__init__()
         self.parent = parent
         self.settings = settings
         self.title = translate("options.title")
+        self.has_mod_settings = False
 
     def init_gui(self):
-        s = self.settings
         from game.app.mods import available_mod_settings
         from .layout import options_screen_layout
 
         self.has_mod_settings = bool(available_mod_settings())
         layout = options_screen_layout(
-            self.width, self.height, len(s.options), self.has_mod_settings,
+            self.width, self.height, len(self.GENERAL_OPTION_INDICES),
+            self.has_mod_settings,
         )
-        for index, (x, y, button_width, _button_height) in enumerate(
-            layout["option_rects"]
+        for option_index, (x, y, button_width, _button_height) in zip(
+            self.GENERAL_OPTION_INDICES, layout["option_rects"],
         ):
-            opt = s.options[index]
+            opt = self.settings.options[option_index]
             if getattr(opt, "is_slider", False):
                 self.controls.append(GuiSlider(
-                    index, x, y, opt, s, width=button_width,
+                    option_index, x, y, opt, self.settings, width=button_width,
                 ))
             else:
                 self.controls.append(GuiSmallButton(
-                    index, x, y, opt.display(s), width=button_width,
+                    option_index, x, y, opt.display(self.settings), width=button_width,
                 ))
 
         username_x, username_y, utility_width, _ = layout["username_rect"]
         self.controls.append(GuiSmallButton(
             101, username_x, username_y,
-            translate("mcpy.username.button"),
-            width=utility_width,
+            translate("mcpy.username.button"), width=utility_width,
         ))
         mod_rect = layout["mod_settings_rect"]
         if mod_rect is not None:
             mod_x, mod_y, mod_width, _ = mod_rect
             self.controls.append(GuiSmallButton(
                 102, mod_x, mod_y,
-                translate("mcpy.modSettings.button"),
-                width=mod_width,
+                translate("mcpy.modSettings.button"), width=mod_width,
             ))
 
+        video_x, video_y, video_width, _ = layout["video_rect"]
+        self.controls.append(GuiButton(
+            103, video_x, video_y, translate("options.video"), width=video_width,
+        ))
         controls_x, controls_y, controls_width, _ = layout["controls_rect"]
         self.controls.append(GuiButton(
             100, controls_x, controls_y, translate("options.controls"), width=controls_width,
         ))
         done_x, done_y, done_width, _ = layout["done_rect"]
         self.controls.append(GuiButton(
-            200, done_x, done_y, translate("gui.done"),
-            width=done_width,
+            200, done_x, done_y, translate("gui.done"), width=done_width,
         ))
 
     def _finish_slider_drags(self):
@@ -541,7 +652,7 @@ class GuiOptions(GuiScreen):
             return
         if isinstance(button, GuiSlider):
             self.mc.on_options_changed()
-        elif button.id < 100:
+        elif button.id in self.GENERAL_OPTION_INDICES:
             self.settings.toggle_option(button.id)
             self.mc.on_options_changed()
             button.text = self.settings.options[button.id].display(self.settings)
@@ -551,7 +662,80 @@ class GuiOptions(GuiScreen):
             self.mc.display_gui_screen(GuiUsername(self))
         elif button.id == 102 and self.has_mod_settings:
             self.mc.display_gui_screen(GuiModSettings(self))
+        elif button.id == 103:
+            self.settings.save()
+            self.mc.display_gui_screen(GuiVideoSettings(self, self.settings))
         elif button.id == 200:
+            self.settings.save()
+            self.mc.display_gui_screen(self.parent)
+
+    def draw_screen(self, mx, my):
+        self.draw_default_background()
+        draw_centered_shadow_string(self.mc.display, self.title, self.width // 2, 20, 0xFFFFFF)
+        super().draw_screen(mx, my)
+
+
+class GuiVideoSettings(GuiScreen):
+    VIDEO_OPTION_INDICES = (8, 4, 7, 6, 5, 10)
+
+    def __init__(self, parent, settings):
+        super().__init__()
+        self.parent = parent
+        self.settings = settings
+        self.title = translate("options.videoTitle")
+
+    def init_gui(self):
+        from .layout import video_settings_screen_layout
+
+        layout = video_settings_screen_layout(
+            self.width, self.height, len(self.VIDEO_OPTION_INDICES),
+        )
+        for option_index, (x, y, button_width, _button_height) in zip(
+            self.VIDEO_OPTION_INDICES, layout["option_rects"],
+        ):
+            opt = self.settings.options[option_index]
+            if getattr(opt, "is_slider", False):
+                control = GuiSlider(
+                    option_index, x, y, opt, self.settings, width=button_width,
+                )
+            else:
+                control = GuiSmallButton(
+                    option_index, x, y, opt.display(self.settings), width=button_width,
+                )
+            self.controls.append(control)
+
+        done_x, done_y, done_width, _ = layout["done_rect"]
+        self.controls.append(GuiButton(
+            200, done_x, done_y, translate("gui.done"), width=done_width,
+        ))
+
+    def _finish_slider_drags(self):
+        released = False
+        for control in self.controls:
+            if isinstance(control, GuiSlider) and control.release():
+                released = True
+        if released:
+            self.settings.save()
+            self.mc.on_options_changed()
+
+    def mouse_released(self, x, y, button):
+        self._finish_slider_drags()
+
+    def on_gui_closed(self):
+        self._finish_slider_drags()
+
+    def action_performed(self, button):
+        if not button.enabled:
+            return
+        if isinstance(button, GuiSlider):
+            self.mc.on_options_changed()
+        elif button.id in self.VIDEO_OPTION_INDICES:
+            self.settings.toggle_option(button.id)
+            self.mc.on_options_changed()
+            button.text = self.settings.options[button.id].display(self.settings)
+        elif button.id == 200:
+            self.settings.save()
+            self.mc.on_options_changed()
             self.mc.display_gui_screen(self.parent)
 
     def draw_screen(self, mx, my):
@@ -563,6 +747,7 @@ class GuiOptions(GuiScreen):
 class GuiModSettings(GuiScreen):
 
     LIST_TOP = 32
+    ROW_HEIGHT = 24
 
     def __init__(self, parent):
         super().__init__()
@@ -571,21 +756,104 @@ class GuiModSettings(GuiScreen):
         self.error_text = ""
         self.settings_entry_by_button = {}
         self.list_bottom = 0
+        self.scroll = 0
+        self._drag_y = None
+        self._scrollbar_drag_offset = None
 
     def init_gui(self):
         from game.app.mods import available_mod_settings
         self.entries = available_mod_settings()
         self.list_bottom = max(self.LIST_TOP, self.height - 48)
-        top = self.LIST_TOP + 12
+        self.scroll = 0
+        self._drag_y = None
+        self._scrollbar_drag_offset = None
+        self.settings_entry_by_button.clear()
         for index, entry in enumerate(self.entries):
             button = GuiButton(
-                index, self.width // 2 - 100, top + index * 24, entry.title
+                index, self.width // 2 - 100,
+                self.LIST_TOP + 12 + index * self.ROW_HEIGHT,
+                entry.title,
             )
             self.controls.append(button)
             self.settings_entry_by_button[index] = entry
         self.controls.append(GuiButton(
             200, self.width // 2 - 100, self.height - 38, translate("gui.done")
         ))
+        self._position_controls()
+
+    def _max_scroll(self):
+        visible_height = max(0, self.list_bottom - self.LIST_TOP)
+        content_height = 12 + len(self.entries) * self.ROW_HEIGHT
+        return max(0, content_height - visible_height)
+
+    def _set_scroll(self, value):
+        self.scroll = max(0, min(self._max_scroll(), int(value)))
+        self._position_controls()
+
+    def _scrollbar_metrics(self):
+        return _scrollbar_metrics(
+            self.width, self.LIST_TOP, self.list_bottom,
+            self.list_bottom - self.LIST_TOP, self._max_scroll(), self.scroll,
+        )
+
+    def _position_controls(self):
+        for index, button in enumerate(self.controls[:-1]):
+            button.y = self.LIST_TOP + 12 + index * self.ROW_HEIGHT - self.scroll
+            button.visible = (
+                button.y + button.height > self.LIST_TOP
+                and button.y < self.list_bottom
+            )
+
+    def mouse_clicked(self, x, y, button):
+        if button in (4, 5):
+            if self.LIST_TOP <= y <= self.list_bottom:
+                self._set_scroll(self.scroll + (-self.ROW_HEIGHT if button == 4 else self.ROW_HEIGHT))
+            return
+        if button != 1:
+            return
+        metrics = self._scrollbar_metrics()
+        if metrics is not None:
+            bar_left = metrics["x"]
+            bar_right = metrics["x"] + metrics["width"]
+            if bar_left <= x <= bar_right and metrics["track_top"] <= y <= metrics["track_bottom"]:
+                if metrics["thumb_top"] <= y <= metrics["thumb_bottom"]:
+                    self._scrollbar_drag_offset = y - metrics["thumb_top"]
+                else:
+                    page = max(self.ROW_HEIGHT, self.list_bottom - self.LIST_TOP - self.ROW_HEIGHT)
+                    self._set_scroll(self.scroll + (page if y > metrics["thumb_bottom"] else -page))
+                    metrics = self._scrollbar_metrics()
+                    self._scrollbar_drag_offset = metrics["thumb_height"] // 2 if metrics else None
+                self._drag_y = None
+                return
+        if not self.LIST_TOP <= y <= self.list_bottom:
+            for control in self.controls[-1:]:
+                if control.mouse_pressed(x, y):
+                    self.mc.play_sound("random.click")
+                    self.action_performed(control)
+                    return
+            return
+        for control in self.controls:
+            if control.mouse_pressed(x, y):
+                self.mc.play_sound("random.click")
+                self.action_performed(control)
+                return
+        self._drag_y = y
+
+    def mouse_moved(self, x, y, buttons=()):
+        if not buttons or not buttons[0]:
+            return
+        if self._scrollbar_drag_offset is not None:
+            metrics = self._scrollbar_metrics()
+            self._set_scroll(_scrollbar_scroll_from_y(metrics, y, self._scrollbar_drag_offset))
+            return
+        if self._drag_y is not None:
+            self._set_scroll(self.scroll + self._drag_y - y)
+            self._drag_y = y
+
+    def mouse_released(self, x, y, button):
+        if button == 1:
+            self._drag_y = None
+            self._scrollbar_drag_offset = None
 
     def action_performed(self, button):
         if button.id == 200:
@@ -602,7 +870,7 @@ class GuiModSettings(GuiScreen):
 
     def draw_screen(self, mx, my):
         draw_pack_screen_background(self.width, self.height)
-        draw_pack_list_panel(self.width, self.LIST_TOP, self.list_bottom)
+        draw_pack_list_panel(self.width, self.LIST_TOP, self.list_bottom, self.scroll)
         draw_centered_string(
             self.mc.display, translate("mcpy.modSettings.title"), self.width // 2, 16, 0xFFFFFF
         )
@@ -611,9 +879,24 @@ class GuiModSettings(GuiScreen):
                 self.mc.display, self.error_text, self.width // 2,
                 self.height // 2, 0xFF5555,
             )
-        for control in self.controls[:-1]:
-            control.draw_button(self.mc, mx, my)
+        self._position_controls()
+        scale = self.mc.scaled_resolution()[0]
+        physical_height = self.mc.display.height
+        scissor_bottom = max(0, physical_height - self.list_bottom * scale)
+        scissor_height = max(0, (self.list_bottom - self.LIST_TOP) * scale)
+        glPushAttrib(GL_SCISSOR_BIT)
+        try:
+            glEnable(GL_SCISSOR_TEST)
+            glScissor(0, scissor_bottom, self.mc.display.width, scissor_height)
+            for control in self.controls[:-1]:
+                control.draw_button(self.mc, mx, my)
+        finally:
+            glPopAttrib()
         draw_texture_pack_list_edge_fades(self.width, self.LIST_TOP, self.list_bottom)
+        _draw_list_scrollbar(
+            self.width, self.LIST_TOP, self.list_bottom,
+            self.list_bottom - self.LIST_TOP, self._max_scroll(), self.scroll,
+        )
         self.controls[-1].draw_button(self.mc, mx, my)
 
 
@@ -661,6 +944,7 @@ class GuiGeneratedModSettings(GuiScreen):
         self.scroll = 0
         self.list_bottom = 0
         self._drag_y = None
+        self._scrollbar_drag_offset = None
         self._toggle_controls = {}
         self._slider_controls = {}
         self._reset_controls = {}
@@ -686,6 +970,7 @@ class GuiGeneratedModSettings(GuiScreen):
         self.list_bottom = max(self.LIST_TOP, self.height - 48)
         self.scroll = 0
         self._drag_y = None
+        self._scrollbar_drag_offset = None
         self._toggle_controls.clear()
         self._slider_controls.clear()
         self._reset_controls.clear()
@@ -748,6 +1033,12 @@ class GuiGeneratedModSettings(GuiScreen):
     def _set_scroll(self, value):
         self.scroll = max(0, min(self._max_scroll(), int(value)))
         self._position_controls()
+
+    def _scrollbar_metrics(self):
+        return _scrollbar_metrics(
+            self.width, self.LIST_TOP, self.list_bottom,
+            self.list_bottom - self.LIST_TOP, self._max_scroll(), self.scroll,
+        )
 
     def _position_controls(self):
         from game.localization import translate_mod
@@ -833,6 +1124,20 @@ class GuiGeneratedModSettings(GuiScreen):
             return
         if button != 1:
             return
+        metrics = self._scrollbar_metrics()
+        if metrics is not None:
+            bar_left = metrics["x"]
+            bar_right = metrics["x"] + metrics["width"]
+            if bar_left <= x <= bar_right and metrics["track_top"] <= y <= metrics["track_bottom"]:
+                if metrics["thumb_top"] <= y <= metrics["thumb_bottom"]:
+                    self._scrollbar_drag_offset = y - metrics["thumb_top"]
+                else:
+                    page = max(self.ROW_HEIGHT, self.list_bottom - self.LIST_TOP - self.ROW_HEIGHT)
+                    self._set_scroll(self.scroll + (page if y > metrics["thumb_bottom"] else -page))
+                    metrics = self._scrollbar_metrics()
+                    self._scrollbar_drag_offset = metrics["thumb_height"] // 2 if metrics else None
+                self._drag_y = None
+                return
         if not self.LIST_TOP <= y <= self.list_bottom:
             return super().mouse_clicked(x, y, button)
         for control in self.controls:
@@ -843,14 +1148,20 @@ class GuiGeneratedModSettings(GuiScreen):
         self._drag_y = y
 
     def mouse_moved(self, x, y, buttons=()):
-        if self._drag_y is None or not buttons or not buttons[0]:
+        if not buttons or not buttons[0]:
             return
-        self._set_scroll(self.scroll + self._drag_y - y)
-        self._drag_y = y
+        if self._scrollbar_drag_offset is not None:
+            metrics = self._scrollbar_metrics()
+            self._set_scroll(_scrollbar_scroll_from_y(metrics, y, self._scrollbar_drag_offset))
+            return
+        if self._drag_y is not None:
+            self._set_scroll(self.scroll + self._drag_y - y)
+            self._drag_y = y
 
     def mouse_released(self, x, y, button):
         self._drag_y = None
         if button == 1:
+            self._scrollbar_drag_offset = None
             self._finish_slider_drags()
 
     def on_gui_closed(self):
@@ -908,12 +1219,19 @@ class GuiGeneratedModSettings(GuiScreen):
         physical_height = self.mc.display.height
         scissor_bottom = max(0, physical_height - self.list_bottom * scale)
         scissor_height = max(0, (self.list_bottom - self.LIST_TOP) * scale)
-        glEnable(GL_SCISSOR_TEST)
-        glScissor(0, scissor_bottom, self.mc.display.width, scissor_height)
-        for control in self.controls[:-1]:
-            control.draw_button(self.mc, mx, my)
-        glDisable(GL_SCISSOR_TEST)
+        glPushAttrib(GL_SCISSOR_BIT)
+        try:
+            glEnable(GL_SCISSOR_TEST)
+            glScissor(0, scissor_bottom, self.mc.display.width, scissor_height)
+            for control in self.controls[:-1]:
+                control.draw_button(self.mc, mx, my)
+        finally:
+            glPopAttrib()
         draw_texture_pack_list_edge_fades(self.width, self.LIST_TOP, self.list_bottom)
+        _draw_list_scrollbar(
+            self.width, self.LIST_TOP, self.list_bottom,
+            self.list_bottom - self.LIST_TOP, self._max_scroll(), self.scroll,
+        )
         self.controls[-1].draw_button(self.mc, mx, my)
 
 
@@ -1043,97 +1361,738 @@ def _world_slot_is_debug(save_root, slot):
     return False
 
 
-def _world_slot_button(button_id, x, y, save_root, slot):
-    return GuiButton(
-        button_id, x, y, _world_slot_label(save_root, slot),
-        colored_suffix=" D" if _world_slot_is_debug(save_root, slot) else "",
-    )
+def _world_save_directory(save_root, folder_name):
+    root = Path(save_root).expanduser().resolve()
+    name = str(folder_name)
+    reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    device_name = name.split(".", 1)[0].rstrip(" .").upper()
+    if (not name or name in {".", ".."} or "/" in name or "\\" in name
+            or any(ord(char) < 32 for char in name)
+            or any(char in name for char in '<>:"|?*')
+            or name.endswith((".", " ")) or device_name in reserved):
+        raise ValueError("invalid world folder name")
+    unresolved = root / name
+    if unresolved.is_symlink():
+        raise ValueError("world save directory cannot be a symbolic link")
+    path = unresolved.resolve()
+    if path.parent != root:
+        raise ValueError("world save directory escaped the save root")
+    return path
+
+
+def _safe_world_folder_name(display_name):
+    name = str(display_name or "").strip()[:32]
+    for char in '/\n\r\t\0\f`?*\\<>|\":':
+        name = name.replace(char, "_")
+    name = name.rstrip(" .")
+    if not name or name in {".", ".."}:
+        name = "World"
+    reserved = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+    if name.split(".", 1)[0].rstrip(" .").upper() in reserved:
+        name = f"_{name}"
+    return name
+
+
+def _unique_world_folder(save_root, display_name):
+    root = Path(save_root).expanduser().resolve()
+    candidate = _safe_world_folder_name(display_name)
+    candidate_path = root / candidate
+    while candidate_path.exists() or candidate_path.is_symlink():
+        candidate += "-"
+        candidate_path = root / candidate
+    return candidate
+
+
+def _world_save_metadata(path):
+    metadata = {}
+    for filename in ("level.dat", "level.dat_old"):
+        metadata_path = path / filename
+        if not metadata_path.is_file():
+            continue
+        try:
+            import nbtlib
+            try:
+                nbt = nbtlib.load(str(metadata_path), gzipped=True)
+            except TypeError:
+                nbt = nbtlib.load(str(metadata_path))
+            data = nbt.get("Data", nbt)
+            metadata = {
+                "display_name": str(data.get("LevelName", "") or "").strip(),
+                "last_played": int(data.get("LastPlayed", 0) or 0),
+                "size_bytes": int(data.get("SizeOnDisk", -1)),
+                "debug": bool(int(data.get("DebugWorld", 0) or 0)),
+            }
+            break
+        except Exception:
+            continue
+    try:
+        from game.world.savegame import level_needs_conversion
+        metadata["needs_conversion"] = bool(level_needs_conversion(path))
+    except Exception:
+        metadata["needs_conversion"] = False
+    try:
+        modified_ms = int(max(
+            (item.stat().st_mtime for item in path.iterdir()), default=path.stat().st_mtime,
+        ) * 1000)
+    except OSError:
+        modified_ms = 0
+    if not metadata.get("last_played"):
+        metadata["last_played"] = modified_ms
+    if not metadata.get("display_name"):
+        metadata["display_name"] = path.name.replace("_", " ")
+    if metadata.get("size_bytes", -1) < 0:
+        try:
+            metadata["size_bytes"] = sum(
+                item.stat().st_size for item in path.rglob("*") if item.is_file()
+            )
+        except OSError:
+            metadata["size_bytes"] = 0
+    return metadata
+
+
+def _list_world_saves(save_root):
+    root = Path(save_root).expanduser().resolve()
+    if not root.is_dir():
+        return []
+    entries = []
+    try:
+        children = tuple(root.iterdir())
+    except OSError:
+        return []
+    for path in children:
+        try:
+            if path.is_symlink() or not path.is_dir():
+                continue
+            resolved = _world_save_directory(root, path.name)
+            if not ((resolved / "level.dat").is_file()
+                    or (resolved / "level.dat_old").is_file()):
+                continue
+            data = _world_save_metadata(resolved)
+            entries.append({"folder": path.name, "path": resolved, **data})
+        except (OSError, ValueError):
+            continue
+    entries.sort(key=lambda entry: (-int(entry["last_played"]), entry["folder"]))
+    return entries
+
+
+def _draw_text_field_rect(x1, y1, x2, y2, color):
+    value = int(color) & 0xFFFFFF
+    glPushAttrib(GL_ENABLE_BIT | GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT)
+    try:
+        glDisable(GL_TEXTURE_2D)
+        glDisable(GL_ALPHA_TEST)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glColor4f(
+            ((value >> 16) & 255) / 255.0,
+            ((value >> 8) & 255) / 255.0,
+            (value & 255) / 255.0,
+            1.0,
+        )
+        glBegin(GL_QUADS)
+        glVertex2f(float(x2), float(y1))
+        glVertex2f(float(x1), float(y1))
+        glVertex2f(float(x1), float(y2))
+        glVertex2f(float(x2), float(y2))
+        glEnd()
+    finally:
+        glPopAttrib()
+
+
+class GuiTextField:
+
+    def __init__(self, x, y, width, text="", max_length=32):
+        self.x, self.y, self.width, self.height = int(x), int(y), int(width), 20
+        self.text = str(text)[:int(max_length)]
+        self.max_length = int(max_length)
+        self.focused = False
+        self.cursor = len(self.text)
+        self.cursor_counter = 0
+
+    def contains(self, x, y):
+        return self.x <= x < self.x + self.width and self.y <= y < self.y + self.height
+
+    def click(self, x, y):
+        self.focused = self.contains(x, y)
+        if self.focused:
+            self.cursor = len(self.text)
+        return self.focused
+
+    def insert(self, text):
+        if not self.focused:
+            return
+        clean = "".join(char for char in str(text) if char.isprintable())
+        clean = clean.replace("\n", " ").replace("\r", " ")
+        available = self.max_length - len(self.text)
+        if available > 0:
+            self.text += clean[:available]
+            self.cursor = len(self.text)
+
+    def key_typed(self, key):
+        if not self.focused:
+            return
+        if key == pg.K_BACKSPACE and self.text:
+            self.text = self.text[:-1]
+            self.cursor = len(self.text)
+
+    def paste(self):
+        try:
+            if pg.scrap.has_text():
+                self.insert(pg.scrap.get_text())
+        except (AttributeError, pg.error):
+            pass
+
+    def draw(self, mc, blink=True):
+        _draw_text_field_rect(
+            self.x - 1, self.y - 1,
+            self.x + self.width + 1, self.y + self.height + 1,
+            0xA0A0A0,
+        )
+        _draw_text_field_rect(
+            self.x, self.y, self.x + self.width, self.y + self.height,
+            0x000000,
+        )
+        visible_text = self.text
+        if self.focused and blink:
+            visible_text += "_"
+        draw_string(
+            mc.display, visible_text, self.x + 4,
+            self.y + (self.height - 8) // 2,
+            0xE0E0E0,
+        )
 
 
 class GuiSelectWorld(GuiScreen):
+    LIST_TOP = 32
+    ROW_HEIGHT = 36
+    DOUBLE_CLICK_SECONDS = 0.35
+
+    BTN_SELECT = 10
+    BTN_RENAME = 11
+    BTN_DELETE = 12
+    BTN_CREATE = 13
+    BTN_CANCEL = 14
+
     def __init__(self, parent, save_root=None):
         super().__init__()
         self.parent = parent
         self.save_root = Path(save_root) if save_root is not None else _default_save_root()
         self.title = translate("selectWorld.title")
         self.error_text = None
-        self.accurate_generation = False
-
-    def _world_type_label(self):
-        return (
-            translate("mcpy.world.generationAccurate")
-            if self.accurate_generation
-            else translate("mcpy.world.generationFaster")
-        )
+        self.entries = []
+        self.selected_index = -1
+        self.scroll = 0
+        self.list_bottom = 0
+        self._scrollbar_drag_offset = None
+        self._last_click_index = -1
+        self._last_click_at = 0.0
 
     def init_gui(self):
-        w, h = self.width, self.height
-        for slot in range(1, 6):
-            self.controls.append(_world_slot_button(
-                slot - 1, w // 2 - 100, h // 6 + 24 * (slot - 1),
-                self.save_root, slot,
-            ))
-        self.controls.append(GuiButton(
-            7, w // 2 - 100, h // 6 + 120, self._world_type_label(),
+        self.list_bottom = max(self.LIST_TOP, self.height - 64)
+        self.refresh_worlds()
+        center = self.width // 2
+        self.controls.extend((
+            GuiButton(self.BTN_SELECT, center - 154, self.height - 52,
+                      translate("selectWorld.select"), width=150),
+            GuiButton(self.BTN_RENAME, center - 154, self.height - 28,
+                      translate("selectWorld.rename"), width=70),
+            GuiButton(self.BTN_DELETE, center - 74, self.height - 28,
+                      translate("selectWorld.delete"), width=70),
+            GuiButton(self.BTN_CREATE, center + 4, self.height - 52,
+                      translate("selectWorld.create"), width=150),
+            GuiButton(self.BTN_CANCEL, center + 4, self.height - 28,
+                      translate("gui.cancel"), width=150),
         ))
-        self.controls.append(GuiButton(
-            5, w // 2 - 100, h // 6 + 144,
-            translate("selectWorld.delete"),
-        ))
-        self.controls.append(GuiButton(
-            6, w // 2 - 100, h // 6 + 168,
-            translate("gui.cancel"),
-        ))
+        self._update_action_buttons()
+
+    def refresh_worlds(self):
+        self.entries = _list_world_saves(self.save_root)
+        if self.selected_index >= len(self.entries):
+            self.selected_index = len(self.entries) - 1
+        if not self.entries:
+            self.selected_index = -1
+        self._set_scroll(self.scroll)
+        self._update_action_buttons()
+
+    def _list_view_height(self):
+        return max(0, self.list_bottom - self.LIST_TOP - 4)
+
+    def _max_scroll(self):
+        return max(0, len(self.entries) * self.ROW_HEIGHT - self._list_view_height())
+
+    def _set_scroll(self, value):
+        content_height = len(self.entries) * self.ROW_HEIGHT
+        view_height = self._list_view_height()
+        if content_height <= view_height:
+            self.scroll = int((content_height - view_height) / 2)
+        else:
+            self.scroll = max(0, min(self._max_scroll(), int(value)))
+
+    def _scrollbar_metrics(self):
+        return _scrollbar_metrics(
+            self.width, self.LIST_TOP, self.list_bottom,
+            self._list_view_height(), self._max_scroll(), self.scroll,
+        )
+
+    def _update_action_buttons(self):
+        selected = 0 <= self.selected_index < len(self.entries)
+        for control in self.controls:
+            if control.id in (self.BTN_SELECT, self.BTN_DELETE, self.BTN_RENAME):
+                control.enabled = selected
+
+    def _ensure_selected_visible(self):
+        if not 0 <= self.selected_index < len(self.entries):
+            return
+        if self._max_scroll() <= 0:
+            self._set_scroll(self.scroll)
+            return
+        viewport = self._list_view_height()
+        row_top = self.selected_index * self.ROW_HEIGHT
+        if row_top < self.scroll:
+            self._set_scroll(row_top)
+        elif row_top + self.ROW_HEIGHT > self.scroll + viewport:
+            self._set_scroll(row_top + self.ROW_HEIGHT - viewport)
+
+    def selected_entry(self):
+        if 0 <= self.selected_index < len(self.entries):
+            return self.entries[self.selected_index]
+        return None
+
+    def _start_selected(self):
+        entry = self.selected_entry()
+        if entry is None:
+            return
+        try:
+            self.error_text = None
+            self.mc.start_world(entry["folder"], display_name=entry["display_name"])
+        except Exception as exc:
+            self.error_text = translate("mcpy.world.openError", entry["display_name"], str(exc))
+
+    def _select_row(self, index, *, allow_double_click=True):
+        if not 0 <= index < len(self.entries):
+            return
+        now = time.monotonic()
+        is_double = (
+            allow_double_click and index == self._last_click_index
+            and now - self._last_click_at <= self.DOUBLE_CLICK_SECONDS
+        )
+        self.selected_index = index
+        self._last_click_index = index
+        self._last_click_at = now
+        self._update_action_buttons()
+        if is_double:
+            self._start_selected()
 
     def action_performed(self, button):
-        if 0 <= button.id < 5:
-            try:
-                self.error_text = None
-                world_name = f"World{button.id + 1}"
-                alt_held = False
-                try:
-                    alt_held = bool(pg.key.get_mods() & pg.KMOD_ALT)
-                except pg.error:
-                    pass
-                slot_exists = _world_slot_exists(self.save_root, button.id + 1)
-                debug_world = (not slot_exists) and alt_held
-                accurate = self.accurate_generation if not slot_exists else None
-                if debug_world:
-                    self.mc.start_world(
-                        world_name,
-                        debug_world=True,
-                        accurate_generation=accurate,
-                    )
-                else:
-                    self.mc.start_world(
-                        world_name,
-                        accurate_generation=accurate,
-                    )
-            except Exception as exc:
-                self.error_text = translate(
-                    "mcpy.world.openError", button.id + 1, str(exc),
-                )
-        elif button.id == 7:
-            self.accurate_generation = not self.accurate_generation
-            button.text = self._world_type_label()
-        elif button.id == 5:
-            self.mc.display_gui_screen(GuiDeleteWorld(self, self.save_root))
-        elif button.id == 6:
+        if button.id == self.BTN_SELECT:
+            self._start_selected()
+        elif button.id == self.BTN_RENAME:
+            entry = self.selected_entry()
+            if entry is not None:
+                self.mc.display_gui_screen(GuiRenameWorld(
+                    self, entry["folder"], entry["display_name"],
+                ))
+        elif button.id == self.BTN_DELETE:
+            entry = self.selected_entry()
+            if entry is not None:
+                self.mc.display_gui_screen(GuiConfirmDeleteWorld(
+                    self, entry["folder"], entry["display_name"],
+                ))
+        elif button.id == self.BTN_CREATE:
+            self.mc.display_gui_screen(GuiCreateWorld(self))
+        elif button.id == self.BTN_CANCEL:
             self.mc.display_gui_screen(self.parent)
 
     def key_typed(self, char, key):
         if key == pg.K_ESCAPE:
             self.mc.display_gui_screen(self.parent)
+        elif key in (pg.K_RETURN, pg.K_KP_ENTER):
+            self._start_selected()
+        elif key == pg.K_UP and self.entries:
+            self.selected_index = max(0, self.selected_index - 1)
+            self._ensure_selected_visible()
+            self._update_action_buttons()
+        elif key == pg.K_DOWN and self.entries:
+            self.selected_index = min(len(self.entries) - 1, self.selected_index + 1)
+            self._ensure_selected_visible()
+            self._update_action_buttons()
+
+    def mouse_clicked(self, x, y, button):
+        if button in (4, 5):
+            self._set_scroll(self.scroll + (-self.ROW_HEIGHT if button == 4 else self.ROW_HEIGHT) * 3)
+            return
+        if button != 1:
+            return
+        metrics = self._scrollbar_metrics()
+        if metrics is not None and metrics["x"] <= x < metrics["x"] + metrics["width"]:
+            if metrics["thumb_top"] <= y <= metrics["thumb_bottom"]:
+                self._scrollbar_drag_offset = y - metrics["thumb_top"]
+            elif y < metrics["thumb_top"]:
+                self._set_scroll(self.scroll - (self.list_bottom - self.LIST_TOP))
+            else:
+                self._set_scroll(self.scroll + (self.list_bottom - self.LIST_TOP))
+            return
+        if (self.LIST_TOP <= y < self.list_bottom
+                and self.width // 2 - 110 <= x <= self.width // 2 + 110):
+            index = int((y - self.LIST_TOP + self.scroll - 2) // self.ROW_HEIGHT)
+            self._select_row(index)
+            return
+        super().mouse_clicked(x, y, button)
+
+    def mouse_moved(self, x, y, buttons=()):
+        if self._scrollbar_drag_offset is not None:
+            metrics = self._scrollbar_metrics()
+            if metrics is not None:
+                self._set_scroll(_scrollbar_scroll_from_y(metrics, y, self._scrollbar_drag_offset))
+
+    def mouse_released(self, x, y, button):
+        if button == 1:
+            self._scrollbar_drag_offset = None
+
+    @staticmethod
+    def _draw_world_row_backing(x, y, width, height, *, selected=False):
+        if not selected:
+            return
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        try:
+            glDisable(GL_TEXTURE_2D)
+            glDisable(GL_LIGHTING)
+            glDisable(GL_FOG)
+            glDisable(GL_DEPTH_TEST)
+            glDisable(GL_BLEND)
+            glColor4f(128.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0, 1.0)
+            glBegin(GL_QUADS)
+            glVertex2f(x, y); glVertex2f(x + width, y)
+            glVertex2f(x + width, y + height); glVertex2f(x, y + height)
+            glEnd()
+            glColor4f(0.0, 0.0, 0.0, 1.0)
+            glBegin(GL_QUADS)
+            glVertex2f(x + 1, y + 1); glVertex2f(x + width - 1, y + 1)
+            glVertex2f(x + width - 1, y + height - 1)
+            glVertex2f(x + 1, y + height - 1)
+            glEnd()
+        finally:
+            glPopAttrib()
+
+    def _draw_entries(self, mx, my):
+        scale = self.mc.scaled_resolution()[0] if callable(getattr(self.mc, "scaled_resolution", None)) else 1
+        physical_height = getattr(self.mc.display, "height", self.height)
+        scissor_bottom = max(0, physical_height - self.list_bottom * scale)
+        scissor_height = max(0, (self.list_bottom - self.LIST_TOP) * scale)
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        try:
+            glEnable(GL_SCISSOR_TEST)
+            glScissor(0, scissor_bottom, getattr(self.mc.display, "width", self.width), scissor_height)
+            for index, entry in enumerate(self.entries):
+                row_y = self.LIST_TOP + 4 + index * self.ROW_HEIGHT - self.scroll
+                if index == self.selected_index:
+                    self._draw_world_row_backing(
+                        self.width // 2 - 110, row_y - 2, 220, 36,
+                        selected=True,
+                    )
+                text_x = self.width // 2 - 108  
+                draw_string(self.mc.display, entry["display_name"], text_x,
+                            row_y + 1, 0xFFFFFF)
+                try:
+                    date_text = datetime.fromtimestamp(entry["last_played"] / 1000.0).strftime("%m/%d/%Y %H:%M")
+                except (OSError, OverflowError, ValueError):
+                    date_text = ""
+                size_mb = entry["size_bytes"] / (1024.0 * 1024.0)
+                details = f"{entry['folder']} ({date_text}, {size_mb:.2f} MB)"
+                if entry.get("debug"):
+                    details += " - Debug"
+                draw_string(self.mc.display, details, text_x, row_y + 12, 0x808080)
+                if entry.get("needs_conversion"):
+                    draw_string(self.mc.display, translate("selectWorld.conversion"),
+                                text_x, row_y + 22, 0x808080)
+        finally:
+            glPopAttrib()
+        draw_texture_pack_list_edge_fades(
+            self.width, self.LIST_TOP, self.list_bottom,
+        )
+        _draw_list_scrollbar(
+            self.width, self.LIST_TOP, self.list_bottom,
+            self.list_bottom - self.LIST_TOP, self._max_scroll(), self.scroll,
+        )
+        if self.error_text:
+            draw_centered_string(self.mc.display, self.error_text[:100], self.width // 2,
+                                 self.list_bottom - 12, 0xFF6666)
+
+    def draw_screen(self, mx, my):
+        draw_pack_screen_background(self.width, self.height)
+        draw_pack_list_panel(
+            self.width, self.LIST_TOP, self.list_bottom, self.scroll,
+        )
+        draw_centered_string(self.mc.display, self.title, self.width // 2, 20, 0xFFFFFF)
+        self._draw_entries(mx, my)
+        super().draw_screen(mx, my)
+
+
+class GuiTextEntryScreen(GuiScreen):
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+        self.name_field = None
+        self.error_text = ""
+        self.update_counter = 0
+
+    def init_gui(self):
+        pg.key.set_repeat(400, 50)
+        start_text_input = getattr(pg.key, "start_text_input", None)
+        if callable(start_text_input):
+            start_text_input()
+        self.name_field = GuiTextField(self.width // 2 - 100, 60, 200, max_length=32)
+        self.name_field.focused = True
+        self.name_field.cursor = 0
+
+    def on_gui_closed(self):
+        pg.key.set_repeat(0, 0)
+        stop_text_input = getattr(pg.key, "stop_text_input", None)
+        if callable(stop_text_input):
+            stop_text_input()
+
+    def update_screen(self):
+        self.update_counter += 1
+        if self.name_field is not None:
+            self.name_field.cursor_counter += 1
+        seed_field = getattr(self, "seed_field", None)
+        if seed_field is not None:
+            seed_field.cursor_counter += 1
+
+    def mouse_clicked(self, x, y, button):
+        if button != 1:
+            return
+        if self.name_field is not None and self.name_field.click(x, y):
+            return
+        super().mouse_clicked(x, y, button)
+
+    def text_typed(self, text):
+        if self.name_field is not None:
+            self.name_field.insert(text)
+        self._update_controls()
+
+    def paste_text(self):
+        if self.name_field is not None:
+            self.name_field.paste()
+        self._update_controls()
+
+    def key_typed(self, char, key):
+        if key == pg.K_ESCAPE:
+            self.mc.display_gui_screen(self.parent)
+            return
+        if key in (pg.K_RETURN, pg.K_KP_ENTER):
+            self._submit()
+            return
+        if key == pg.K_TAB:
+            self.name_field.focused = not self.name_field.focused
+            return
+        if key == pg.K_BACKSPACE or key in (
+            pg.K_LEFT, pg.K_RIGHT, pg.K_HOME, pg.K_END,
+            getattr(pg, "K_DELETE", -1),
+        ):
+            self.name_field.key_typed(key)
+            self._update_controls()
+
+    def _update_controls(self):
+        if self.controls:
+            self.controls[0].enabled = bool(self.name_field and self.name_field.text.strip())
+
+    def _submit(self):
+        raise NotImplementedError
+
+    def draw_fields(self, mx, my):
+        self.name_field.draw(self.mc, (self.name_field.cursor_counter // 6) % 2 == 0)
+
+
+class GuiCreateWorld(GuiTextEntryScreen):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.seed_field = None
+        self.accurate_generation = False
+        self.debug_world = False
+
+    def init_gui(self):
+        from .layout import create_world_layout
+
+        super().init_gui()
+        self.create_layout = create_world_layout(self.width, self.height)
+        layout = self.create_layout
+        self.name_field.x = layout["field_x"]
+        self.name_field.width = layout["field_width"]
+        self.name_field.y = layout["name_field_y"]
+        self.name_field.text = translate("selectWorld.newWorld")
+        self.name_field.cursor = len(self.name_field.text)
+        self.seed_field = GuiTextField(
+            layout["field_x"], layout["seed_field_y"],
+            layout["field_width"], max_length=64,
+        )
+        for button_id, rect, label in (
+            (0, layout["create_rect"], translate("selectWorld.create")),
+            (1, layout["cancel_rect"], translate("gui.cancel")),
+            (2, layout["generation_rect"], self._generation_label()),
+        ):
+            x, y, button_width, button_height = rect
+            self.controls.append(GuiButton(
+                button_id, x, y, label, width=button_width, height=button_height,
+            ))
+        self._update_controls()
+
+    def _generation_label(self):
+        if self.debug_world:
+            return translate("mcpy.world.generationDebug")
+        return translate("mcpy.world.generationDefault")
+
+    def _update_controls(self):
+        if self.controls:
+            self.controls[0].enabled = True
+
+    def mouse_clicked(self, x, y, button):
+        if button == 1 and self.seed_field.click(x, y):
+            self.name_field.focused = False
+            return
+        self.name_field.focused = self.name_field.contains(x, y)
+        super().mouse_clicked(x, y, button)
+
+    def text_typed(self, text):
+        field = self.seed_field if self.seed_field.focused else self.name_field
+        field.insert(text)
+        self._update_controls()
+
+    def paste_text(self):
+        field = self.seed_field if self.seed_field.focused else self.name_field
+        field.paste()
+        self._update_controls()
+
+    def key_typed(self, char, key):
+        if key == pg.K_TAB:
+            self.name_field.focused = not self.name_field.focused
+            self.seed_field.focused = not self.seed_field.focused
+            return
+        if self.seed_field.focused and key in (pg.K_BACKSPACE, pg.K_LEFT, pg.K_RIGHT, pg.K_HOME, pg.K_END,
+                                              getattr(pg, "K_DELETE", -1)):
+            self.seed_field.key_typed(key)
+            return
+        super().key_typed(char, key)
+
+    def _submit(self):
+        display_name = self.name_field.text.strip()
+        folder = _unique_world_folder(self.parent.save_root, display_name)
+        seed_text = self.seed_field.text.strip()
+        seed = _parse_world_seed(seed_text)
+        try:
+            self.mc.start_world(
+                folder, display_name=display_name, seed=seed,
+                debug_world=self.debug_world,
+                accurate_generation=False if not self.debug_world else None,
+            )
+        except Exception as exc:
+            self.error_text = translate("mcpy.world.createError", str(exc))
+
+    def action_performed(self, button):
+        if button.id == 0:
+            self._submit()
+        elif button.id == 1:
+            self.mc.display_gui_screen(self.parent)
+        elif button.id == 2:
+            self.debug_world = not self.debug_world
+            self.accurate_generation = False
+            button.text = self._generation_label()
 
     def draw_screen(self, mx, my):
         self.draw_default_background()
-        draw_centered_string(self.mc.display, self.title, self.width // 2, 20, 0xFFFFFF)
+        layout = getattr(self, "create_layout", None)
+        if layout is None:
+            from .layout import create_world_layout
+            layout = self.create_layout = create_world_layout(self.width, self.height)
+        draw_centered_string(
+            self.mc.display, translate("selectWorld.create"),
+            self.width // 2, layout["title_y"], 0xFFFFFF,
+        )
+        label_x = layout["field_x"]
+        draw_string(self.mc.display, translate("selectWorld.enterName"),
+                    label_x, layout["name_label_y"], 0xA0A0A0)
+        self.draw_fields(mx, my)
+        draw_string(
+            self.mc.display,
+            translate("selectWorld.resultFolder") + " " +
+            _unique_world_folder(self.parent.save_root, self.name_field.text.strip()),
+            label_x, layout["folder_y"], 0xA0A0A0,
+        )
+        draw_string(self.mc.display, translate("selectWorld.enterSeed"),
+                    label_x, layout["seed_label_y"], 0xA0A0A0)
+        self.seed_field.draw(self.mc, (self.seed_field.cursor_counter // 6) % 2 == 0)
+        draw_string(self.mc.display, translate("selectWorld.seedInfo"),
+                    label_x, layout["seed_info_y"], 0xA0A0A0)
         if self.error_text:
-            message = self.error_text
-            if len(message) > 100:
-                message = message[:97] + "..."
-            draw_centered_string(self.mc.display, message, self.width // 2, 42, 0xFF6666)
-        super().draw_screen(mx, my)
+            draw_centered_string(
+                self.mc.display, self.error_text[:100], self.width // 2,
+                layout["error_y"], 0xFF6666,
+            )
+        GuiScreen.draw_screen(self, mx, my)
+
+
+class GuiRenameWorld(GuiTextEntryScreen):
+    def __init__(self, parent, world_folder, display_name=""):
+        super().__init__(parent)
+        self.world_folder = str(world_folder)
+        self.initial_name = str(display_name or world_folder)
+
+    def init_gui(self):
+        super().init_gui()
+        self.name_field.text = self.initial_name[:32]
+        self.name_field.cursor = len(self.name_field.text)
+        self.controls.append(GuiButton(0, self.width // 2 - 100, self.height // 4 + 108,
+                                       translate("selectWorld.renameButton")))
+        self.controls.append(GuiButton(1, self.width // 2 - 100, self.height // 4 + 132,
+                                       translate("gui.cancel")))
+        self._update_controls()
+
+    def _submit(self):
+        display_name = self.name_field.text.strip()
+        if not display_name:
+            self.error_text = translate("mcpy.world.nameRequired")
+            return
+        try:
+            from game.world.savegame import rename_world_level_name
+            rename_world_level_name(_world_save_directory(self.parent.save_root, self.world_folder), display_name)
+            self.parent.refresh_worlds()
+            self.mc.display_gui_screen(self.parent)
+        except Exception as exc:
+            self.error_text = translate("mcpy.world.renameError", str(exc))
+
+    def action_performed(self, button):
+        if button.id == 0:
+            self._submit()
+        elif button.id == 1:
+            self.mc.display_gui_screen(self.parent)
+
+    def draw_screen(self, mx, my):
+        self.draw_default_background()
+        draw_centered_string(self.mc.display, translate("selectWorld.renameTitle"), self.width // 2,
+                             self.height // 4 - 40, 0xFFFFFF)
+        draw_string(self.mc.display, translate("selectWorld.enterName"), self.width // 2 - 100, 47, 0xA0A0A0)
+        self.draw_fields(mx, my)
+        if self.error_text:
+            draw_centered_string(self.mc.display, self.error_text[:100], self.width // 2, 100, 0xFF6666)
+        GuiScreen.draw_screen(self, mx, my)
+
+
+def _parse_world_seed(seed_text):
+    text = str(seed_text or "")
+    if not text.strip():
+        return None
+    if re.fullmatch(r"[+-]?[0-9]+", text):
+        numeric_seed = int(text, 10)
+        if numeric_seed == 0:
+            return None
+        if -(2 ** 63) <= numeric_seed < 2 ** 63:
+            return numeric_seed
+    value = 0
+    encoded = text.encode("utf-16-be", errors="surrogatepass")
+    for index in range(0, len(encoded), 2):
+        code_unit = int.from_bytes(encoded[index:index + 2], "big")
+        value = (31 * value + code_unit) & 0xFFFFFFFF
+    return value - 0x100000000 if value & 0x80000000 else value
 
 
 class GuiDeleteWorld(GuiScreen):
@@ -1145,11 +2104,7 @@ class GuiDeleteWorld(GuiScreen):
 
     def init_gui(self):
         w, h = self.width, self.height
-        for slot in range(1, 6):
-            self.controls.append(_world_slot_button(
-                slot - 1, w // 2 - 100, h // 6 + 24 * (slot - 1),
-                self.save_root, slot,
-            ))
+
         self.controls.append(GuiButton(
             6, w // 2 - 100, h // 6 + 168,
             translate("gui.cancel"),
@@ -1174,10 +2129,14 @@ class GuiDeleteWorld(GuiScreen):
 
 
 class GuiConfirmDeleteWorld(GuiScreen):
-    def __init__(self, parent, slot):
+    def __init__(self, parent, world_folder, display_name=None):
         super().__init__()
         self.parent = parent
-        self.slot = int(slot)
+        if isinstance(world_folder, int):
+            self.world_folder = f"World{int(world_folder)}"
+        else:
+            self.world_folder = str(world_folder)
+        self.display_name = str(display_name or self.world_folder)
         self.error_text = None
 
     def init_gui(self):
@@ -1192,14 +2151,18 @@ class GuiConfirmDeleteWorld(GuiScreen):
         if button.id != 0:
             return
         try:
-            target = _slot_directory(self.parent.save_root, self.slot)
+            target = _world_save_directory(self.parent.save_root, self.world_folder)
             if target.exists():
                 shutil.rmtree(target)
-            destination = getattr(self.parent, "parent", None) or self.parent
+            if callable(getattr(self.parent, "refresh_worlds", None)):
+                self.parent.refresh_worlds()
+                destination = self.parent
+            else:
+                destination = getattr(self.parent, "parent", None) or self.parent
             self.mc.display_gui_screen(destination)
         except (OSError, ValueError) as exc:
             self.error_text = translate(
-                "mcpy.world.deleteError", self.slot, str(exc),
+                "mcpy.world.deleteError", self.display_name, str(exc),
             )
 
     def key_typed(self, char, key):
@@ -1209,11 +2172,12 @@ class GuiConfirmDeleteWorld(GuiScreen):
     def draw_screen(self, mx, my):
         self.draw_default_background()
         draw_centered_string(
-            self.mc.display, "Are you sure you want to delete this world?",
+            self.mc.display, translate("selectWorld.deleteQuestion"),
             self.width // 2, 70, 0xFFFFFF,
         )
         draw_centered_string(
-            self.mc.display, f"'World {self.slot}' will be lost forever!",
+            self.mc.display,
+            f"'{self.display_name}' {translate('selectWorld.deleteWarning')}",
             self.width // 2, 90, 0xFFFFFF,
         )
         if self.error_text:
@@ -1342,6 +2306,7 @@ class GuiModsTexturePacks(GuiScreen):
         self.scroll = 0
         self.list_bottom = 0
         self._drag_y = None
+        self._scrollbar_drag_offset = None
         self._icon_textures = {}
 
     def init_gui(self):
@@ -1355,10 +2320,17 @@ class GuiModsTexturePacks(GuiScreen):
         self.scroll = 0
         self.list_bottom = self.height - 72
         self._drag_y = None
+        self._scrollbar_drag_offset = None
         from game.app.mods import available_mod_settings
         has_mod_settings = bool(available_mod_settings())
-        button_width = min(150, max(100, (self.width - 40) // 3 - 8))
+        labels = (
+            translate("texturePack.openFolder"), translate("mcpy.mods.folder"),
+            translate("mcpy.modSettings.title"),
+        )
+        label_width = max(self.mc.display.string_width(label) for label in labels) + 16
         button_gap = 8
+        available = (self.width - 40 - button_gap * 2) // 3
+        button_width = max(60, min(150, available, max(100, label_width)))
         row_width = button_width * 3 + button_gap * 2
         row_left = (self.width - row_width) // 2
         settings_button = GuiButton(
@@ -1380,6 +2352,13 @@ class GuiModsTexturePacks(GuiScreen):
     def _max_scroll(self):
         visible_height = max(0, self.list_bottom - self.LIST_TOP - 4)
         return max(0, len(self.entries) * self.ROW_HEIGHT - visible_height)
+
+    def _scrollbar_metrics(self):
+        viewport_height = max(0, self.list_bottom - self.LIST_TOP - 4)
+        return _scrollbar_metrics(
+            self.width, self.LIST_TOP, self.list_bottom,
+            viewport_height, self._max_scroll(), self.scroll,
+        )
 
     def _entry_at(self, x, y):
         left = self.width // 2 - 110
@@ -1463,6 +2442,22 @@ class GuiModsTexturePacks(GuiScreen):
             return
         if button != 1:
             return
+        metrics = self._scrollbar_metrics()
+        if metrics is not None:
+            bar_left = metrics["x"]
+            bar_right = metrics["x"] + metrics["width"]
+            if bar_left <= x <= bar_right and metrics["track_top"] <= y <= metrics["track_bottom"]:
+                if metrics["thumb_top"] <= y <= metrics["thumb_bottom"]:
+                    self._scrollbar_drag_offset = y - metrics["thumb_top"]
+                else:
+                    page = max(self.ROW_HEIGHT, self.list_bottom - self.LIST_TOP - self.ROW_HEIGHT)
+                    self.scroll = max(
+                        0, min(self._max_scroll(), self.scroll + (page if y > metrics["thumb_bottom"] else -page)),
+                    )
+                    metrics = self._scrollbar_metrics()
+                    self._scrollbar_drag_offset = metrics["thumb_height"] // 2 if metrics else None
+                self._drag_y = None
+                return
         self._drag_y = y if self.LIST_TOP <= y <= self.list_bottom else None
         for control in list(self.controls):
             if control.mouse_pressed(x, y):
@@ -1482,18 +2477,21 @@ class GuiModsTexturePacks(GuiScreen):
                 self._refresh_entries()
 
     def mouse_moved(self, x, y, buttons=()):
-        if self._drag_y is None:
+        if not buttons or not buttons[0]:
             return
-        left_down = bool(buttons and buttons[0])
-        if not left_down:
+        if self._scrollbar_drag_offset is not None:
+            metrics = self._scrollbar_metrics()
+            self.scroll = _scrollbar_scroll_from_y(metrics, y, self._scrollbar_drag_offset)
             return
-        self.scroll += self._drag_y - y
-        self._drag_y = y
-        self.scroll = max(0, min(self._max_scroll(), self.scroll))
+        if self._drag_y is not None:
+            self.scroll += self._drag_y - y
+            self._drag_y = y
+            self.scroll = max(0, min(self._max_scroll(), self.scroll))
 
     def mouse_released(self, x, y, button):
         if button == 1:
             self._drag_y = None
+            self._scrollbar_drag_offset = None
 
     def key_typed(self, char, key):
         if key == pg.K_ESCAPE:
@@ -1588,69 +2586,151 @@ class GuiModsTexturePacks(GuiScreen):
         physical_height = self.mc.display.height
         scissor_bottom = max(0, physical_height - self.list_bottom * scale)
         scissor_height = max(0, (self.list_bottom - self.LIST_TOP) * scale)
+        glPushAttrib(GL_SCISSOR_BIT)
         glEnable(GL_SCISSOR_TEST)
         glScissor(0, scissor_bottom, self.mc.display.width, scissor_height)
-        for index, entry in enumerate(self.entries):
-            row_y = 36 + index * self.ROW_HEIGHT - self.scroll
-            selected = (
-                entry.kind == "texturepack" and entry.identifier == active_pack
-            ) or (entry.kind == "mod" and entry.enabled)
-            row_left = self.width // 2 - 110
-            row_top = row_y - 2
-            if selected:
-                self._draw_selection_border(row_left, row_top)
-            else:
-                self._draw_entry_backing(row_left, row_top)
+        try:
+            for index, entry in enumerate(self.entries):
+                row_y = 36 + index * self.ROW_HEIGHT - self.scroll
+                selected = (
+                    entry.kind == "texturepack" and entry.identifier == active_pack
+                ) or (entry.kind == "mod" and entry.enabled)
+                row_left = self.width // 2 - 110
+                row_top = row_y - 2
+                if selected:
+                    self._draw_selection_border(row_left, row_top)
+                else:
+                    self._draw_entry_backing(row_left, row_top)
 
-            icon = self._icon_textures.get(entry.icon_path)
-            if icon is None:
-                icon = Texture(entry.icon_path)
-                self._icon_textures[entry.icon_path] = icon
-            glColor4f(1.0, 1.0, 1.0, 1.0)
-            icon_size = self.ROW_ICON_SIZE - 2
-            self._draw_scaled_icon(
-                icon, icon_x, row_top + 2, icon_size, icon_size,
-            )
-
-            if entry.kind == "mod":
-                from game.app.mods import mod_restart_required
-                status = translate(
-                    "mcpy.mods.enabled" if entry.enabled else "mcpy.mods.disabled",
+                icon = self._icon_textures.get(entry.icon_path)
+                if icon is None:
+                    icon = Texture(entry.icon_path)
+                    self._icon_textures[entry.icon_path] = icon
+                glColor4f(1.0, 1.0, 1.0, 1.0)
+                icon_size = self.ROW_ICON_SIZE - 2
+                self._draw_scaled_icon(
+                    icon, icon_x, row_top + 2, icon_size, icon_size,
                 )
-                if mod_restart_required(entry.identifier, entry.default_enabled):
-                    status += translate(
-                        "mcpy.mods.restartRequired",
+
+                if entry.kind == "mod":
+                    from game.app.mods import mod_restart_required
+                    status = translate(
+                        "mcpy.mods.enabled" if entry.enabled else "mcpy.mods.disabled",
                     )
-                description = entry.description
-                details = status
-                type_label = translate("mcpy.mods.typeMod")
-            else:
-                description = entry.description
-                details = entry.details
-                type_label = translate("mcpy.mods.typeTexturePack")
-            label_width = self.mc.display.string_width(type_label)
-            fitted_title = self._fit_text(
-                self.mc.display, entry.title, max(0, text_width - label_width),
-            )
-            draw_string(
-                self.mc.display, fitted_title + " " + type_label,
-                text_x, row_y + 1, 0xFFFFFF,
-            )
-            if description:
-                draw_string(
-                    self.mc.display, self._fit_text(self.mc.display, description, text_width),
-                    text_x, row_y + 12, 0xA0A0A0,
+                    if mod_restart_required(entry.identifier, entry.default_enabled):
+                        status += " " + translate(
+                            "mcpy.mods.restartRequired",
+                        )
+                    description = entry.description
+                    details = status
+                    type_label = translate("mcpy.mods.typeMod")
+                else:
+                    description = entry.description
+                    details = entry.details
+                    type_label = translate("mcpy.mods.typeTexturePack")
+                label_width = self.mc.display.string_width(type_label)
+                fitted_title = self._fit_text(
+                    self.mc.display, entry.title, max(0, text_width - label_width),
                 )
-            if details:
                 draw_string(
-                    self.mc.display, self._fit_text(self.mc.display, details, text_width),
-                    text_x, row_y + 22, 0xA0A0A0,
+                    self.mc.display, fitted_title + " " + type_label,
+                    text_x, row_y + 1, 0xFFFFFF,
                 )
-        glDisable(GL_SCISSOR_TEST)
+                if description:
+                    draw_string(
+                        self.mc.display, self._fit_text(self.mc.display, description, text_width),
+                        text_x, row_y + 12, 0xA0A0A0,
+                    )
+                if details:
+                    draw_string(
+                        self.mc.display, self._fit_text(self.mc.display, details, text_width),
+                        text_x, row_y + 22, 0xA0A0A0,
+                    )
+        finally:
+            glPopAttrib()
         draw_texture_pack_list_edge_fades(
             self.width, self.LIST_TOP, self.list_bottom,
         )
+        _draw_list_scrollbar(
+            self.width, self.LIST_TOP, self.list_bottom,
+            max(0, self.list_bottom - self.LIST_TOP - 4),
+            self._max_scroll(), self.scroll,
+        )
         super().draw_screen(mx, my)
+        self._draw_entry_tooltip(mx, my, text_width)
+
+    def _entry_tooltip_lines(self, entry, text_width):
+        display = self.mc.display
+        if entry.kind == "mod":
+            from game.app.mods import mod_restart_required
+            details = translate("mcpy.mods.enabled" if entry.enabled else "mcpy.mods.disabled")
+            if mod_restart_required(entry.identifier, entry.default_enabled):
+                details += " " + translate("mcpy.mods.restartRequired")
+            type_label = translate("mcpy.mods.typeMod")
+        else:
+            details = entry.details
+            type_label = translate("mcpy.mods.typeTexturePack")
+        description = entry.description
+        title_room = max(0, text_width - display.string_width(type_label))
+        truncated = (
+            self._fit_text(display, entry.title, title_room) != str(entry.title or "")
+            or self._fit_text(display, description, text_width) != str(description or "")
+            or self._fit_text(display, details, text_width) != str(details or "")
+        )
+        if not truncated:
+            return []
+        wrap_width = min(max(120, self.width - 40), 220)
+        lines = [(str(entry.title or "") + " " + type_label, 0xFFFFFF)]
+        for block, color in ((description, 0xC0C0C0), (details, 0xA0A0A0)):
+            words = str(block or "").split()
+            current = ""
+            for word in words:
+                trial = (current + " " + word).strip()
+                if current and display.string_width(trial) > wrap_width:
+                    lines.append((current, color))
+                    current = word
+                else:
+                    current = trial
+            if current:
+                lines.append((current, color))
+        return lines
+
+    def _draw_entry_tooltip(self, mx, my, text_width):
+        if any(c.visible and c._contains(mx, my) for c in self.controls):
+            return
+        entry = self._entry_at(mx, my)
+        if entry is None:
+            return
+        lines = self._entry_tooltip_lines(entry, text_width)
+        if not lines:
+            return
+        display = self.mc.display
+        box_width = max(display.string_width(text) for text, _color in lines)
+        box_height = len(lines) * 10 - 2
+        tx = min(int(mx) + 12, max(3, self.width - box_width - 6))
+        ty = min(max(int(my) - 12, 3), max(3, self.height - box_height - 6))
+        capabilities = (GL_BLEND, GL_DEPTH_TEST, GL_LIGHTING, GL_TEXTURE_2D)
+        previous = tuple((cap, bool(glIsEnabled(cap))) for cap in capabilities)
+        try:
+            glDisable(GL_DEPTH_TEST)
+            glDisable(GL_LIGHTING)
+            glDisable(GL_TEXTURE_2D)
+            glEnable(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+            glColor4f(0.0, 0.0, 0.0, 192.0 / 255.0)
+            glBegin(GL_QUADS)
+            glVertex2f(tx - 3, ty - 3)
+            glVertex2f(tx + box_width + 3, ty - 3)
+            glVertex2f(tx + box_width + 3, ty + box_height + 3)
+            glVertex2f(tx - 3, ty + box_height + 3)
+            glEnd()
+            glEnable(GL_TEXTURE_2D)
+            for index, (text, color) in enumerate(lines):
+                draw_string(display, text, tx, ty + index * 10, color)
+        finally:
+            glColor4f(1.0, 1.0, 1.0, 1.0)
+            for cap, was_enabled in previous:
+                (glEnable if was_enabled else glDisable)(cap)
 
 
 class GuiMainMenu(GuiScreen):
@@ -1678,14 +2758,15 @@ class GuiMainMenu(GuiScreen):
         self.controls.append(GuiButton(1, w // 2 - 100, h // 4 + 48, translate("menu.singleplayer")))
         multi = GuiButton(2, w // 2 - 100, h // 4 + 72, translate("menu.multiplayer"))
         mods = GuiButton(4, w // 2 - 100, h // 4 + 96, translate("menu.mods"))
-        tutorial = GuiButton(
-            3, w // 2 - 100, h // 4 + 120,
-            translate("mcpy.menu.tutorial"),
-        )
         multi.enabled = True
-        tutorial.enabled = False
-        self.controls.extend((multi, mods, tutorial))
-        self.controls.append(GuiButton(0, w // 2 - 100, h // 4 + 144, translate("menu.options")))
+        self.controls.extend((multi, mods))
+        action_y = h // 4 + 132
+        self.controls.append(GuiButton(
+            0, w // 2 - 100, action_y, translate("menu.options"), width=98,
+        ))
+        self.controls.append(GuiButton(
+            5, w // 2 + 2, action_y, translate("menu.quit"), width=98,
+        ))
 
     def update_screen(self):
         self.update_counter += 1
@@ -1723,7 +2804,7 @@ class GuiMainMenu(GuiScreen):
         if not getattr(self.mc.settings, "username_set", True):
             draw_centered_string(
                 d, translate("mcpy.username.hint"),
-                self.width // 2, self.height // 4 + 144 + 24, 0xFFFF55,
+                self.width // 2, self.height // 4 + 156, 0xFFFF55,
             )
         super().draw_screen(mx, my)
 
@@ -1857,70 +2938,76 @@ class GuiMultiplayer(GuiScreen):
         super().draw_screen(mx, my)
 
 
-class GuiHostWorld(GuiScreen):
+class GuiHostWorld(GuiSelectWorld):
 
     def __init__(self, parent, save_root=None):
-        super().__init__()
-        self.parent = parent
-        self.save_root = Path(save_root) if save_root is not None else Path("saves")
-        self.error_text = None
+        super().__init__(parent, save_root)
+        self.title = translate("mcpy.multiplayer.hostTitle")
 
     def init_gui(self):
-        w, h = self.width, self.height
-        for slot in range(1, 6):
-            self.controls.append(_world_slot_button(
-                slot - 1, w // 2 - 100, h // 6 + 24 * (slot - 1),
-                self.save_root, slot,
-            ))
-        self.controls.append(GuiButton(
-            6, w // 2 - 100, h // 6 + 168,
-            translate("gui.cancel"),
+        self.list_bottom = max(self.LIST_TOP, self.height - 64)
+        self.refresh_worlds()
+        center = self.width // 2
+        self.controls.extend((
+            GuiButton(10, center - 154, self.height - 28,
+                      translate("mcpy.multiplayer.hostSelected"), width=150),
+            GuiButton(0, center + 4, self.height - 28,
+                      translate("gui.cancel"), width=150),
         ))
+        self._update_action_buttons()
+
+    def _update_action_buttons(self):
+        selected = 0 <= self.selected_index < len(self.entries)
+        for control in self.controls:
+            if control.id == 10:
+                control.enabled = selected
+
+    def _start_selected(self):
+        if self.selected_entry() is not None:
+            self.action_performed(next(control for control in self.controls if control.id == 10))
 
     def action_performed(self, button):
-        if 0 <= button.id < 5:
-            try:
-                self.error_text = None
-                saved_dimension = getattr(self.mc, "saved_world_dimension", None)
-                if callable(saved_dimension) and saved_dimension(f"World{button.id + 1}") != 0:
-                    self.error_text = (
-                        translate(
-                            "mcpy.multiplayer.netherHostBlocked", button.id + 1,
-                        )
-                    )
-                    return
-                self.mc.start_world(f"World{button.id + 1}")
-                ok = self.mc.start_host_multiplayer()
-                if not ok:
-                    reason = ""
-                    if hasattr(self.mc, "multiplayer_host_block_reason"):
-                        reason = self.mc.multiplayer_host_block_reason()
-                    elif hasattr(self.mc, "multiplayer_mod_block_reason"):
-                        reason = self.mc.multiplayer_mod_block_reason()
-                    self.error_text = reason or translate(
-                        "mcpy.multiplayer.bindFailed",
-                    )
-            except Exception as exc:
-                self.error_text = translate(
-                    "mcpy.multiplayer.hostWorldError", button.id + 1, str(exc),
-                )
-        elif button.id == 6:
+        if button.id == 0:
             self.mc.display_gui_screen(self.parent)
+            return
+        if button.id != 10:
+            return
+        entry = self.selected_entry()
+        if entry is None:
+            return
+        try:
+            saved_dimension = getattr(self.mc, "saved_world_dimension", None)
+            if callable(saved_dimension) and saved_dimension(entry["folder"]) != 0:
+                self.error_text = translate(
+                    "mcpy.multiplayer.netherHostBlocked", entry["display_name"],
+                )
+                return
+            self.mc.start_world(entry["folder"], display_name=entry["display_name"])
+            ok = self.mc.start_host_multiplayer()
+            if not ok:
+                reason = ""
+                if hasattr(self.mc, "multiplayer_host_block_reason"):
+                    reason = self.mc.multiplayer_host_block_reason()
+                elif hasattr(self.mc, "multiplayer_mod_block_reason"):
+                    reason = self.mc.multiplayer_mod_block_reason()
+                self.error_text = reason or translate("mcpy.multiplayer.bindFailed")
+        except Exception as exc:
+            self.error_text = translate(
+                "mcpy.multiplayer.hostWorldError", entry["display_name"], str(exc),
+            )
 
     def key_typed(self, char, key):
-        if key == pg.K_ESCAPE:
-            self.mc.display_gui_screen(self.parent)
+        if key in (pg.K_RETURN, pg.K_KP_ENTER):
+            if self.selected_entry() is not None:
+                self.action_performed(next(control for control in self.controls if control.id == 10))
+        else:
+            super().key_typed(char, key)
 
     def draw_screen(self, mx, my):
         self.draw_default_background()
-        draw_centered_string(
-            self.mc.display,
-            translate("mcpy.multiplayer.hostTitle"),
-            self.width // 2, 20, 0xFFFFFF,
-        )
-        if self.error_text:
-            draw_centered_string(self.mc.display, self.error_text[:80], self.width // 2, self.height - 40, 0xFF5555)
-        super().draw_screen(mx, my)
+        draw_centered_string(self.mc.display, self.title, self.width // 2, 20, 0xFFFFFF)
+        self._draw_entries(mx, my)
+        GuiScreen.draw_screen(self, mx, my)
 
 
 class GuiDisconnected(GuiScreen):
@@ -2063,18 +3150,80 @@ class GuiConnecting(GuiScreen):
         super().draw_screen(mx, my)
 
 
+
+class GuiSleep(GuiScreen):
+
+    def does_gui_pause_game(self):
+        return False
+
+    def init_gui(self):
+        self.controls = []
+        self.controls.append(GuiButton(
+            0,
+            self.width // 2 - 100,
+            self.height - 56,
+            translate("tile.bed.leave", default="Leave Bed"),
+            width=200,
+            height=20,
+        ))
+
+    def update_screen(self):
+        player = getattr(self.mc, "player", None)
+        if player is None or not getattr(player, "is_player_sleeping", lambda: False)():
+            self.mc.display_gui_screen(None)
+
+    def action_performed(self, button):
+        if button.id != 0:
+            return
+        player = getattr(self.mc, "player", None)
+        if player is not None:
+            wake = getattr(player, "wake_up_player", None)
+            if callable(wake):
+                wake(reset_timer=True, update_world_flag=True)
+        self.mc.display_gui_screen(None)
+
+    def key_typed(self, char, key):
+        if key == pg.K_ESCAPE:
+            self.action_performed(self.controls[0] if self.controls else type("B", (), {"id": 0})())
+            return
+        if key == getattr(getattr(self.mc, "settings", None), "key_chat", type("K", (), {"key": pg.K_t})()).key:
+            self.mc.display_gui_screen(GuiChat())
+            return
+
+    def draw_screen(self, mx, my):
+        super().draw_screen(mx, my)
+
+
 class GuiChat(GuiScreen):
 
     def __init__(self):
         super().__init__()
-        self.message = ""
+        from game.multiplayer.chat import ChatInput
+        self.input = ChatInput()
         self.update_counter = 0
+
+    @property
+    def message(self):
+        return self.input.text
+
+    @message.setter
+    def message(self, value):
+        self.input.text = str(value)[:self.input.max_length]
+        self.input.caret = len(self.input.text)
 
     def does_gui_pause_game(self):
         return False
 
     def init_gui(self):
         pg.key.set_repeat(400, 50)
+        history = getattr(self.mc, "chat_history", None)
+        if not isinstance(history, list):
+            history = []
+            try:
+                self.mc.chat_history = history
+            except AttributeError:
+                pass
+        self.input.history = history
 
     def on_gui_closed(self):
         pg.key.set_repeat(0, 0)
@@ -2083,19 +3232,35 @@ class GuiChat(GuiScreen):
         self.update_counter += 1
 
     def _append_text(self, text):
-        typed = "".join(ch for ch in str(text) if ch.isprintable())
-        self.message += typed[:max(0, 100 - len(self.message))]
+        self.input.insert(text)
 
     def paste_text(self):
         if pg.scrap.has_text():
             self._append_text(pg.scrap.get_text())
 
+    def _player_names(self):
+        session = getattr(self.mc, "mp_session", None)
+        getter = getattr(session, "connected_player_names", None)
+        if callable(getter):
+            try:
+                return list(getter())
+            except Exception:
+                pass
+        name = getattr(getattr(self.mc, "settings", None), "username", None)
+        return [name] if name else []
+
     def key_typed(self, char, key):
+        chat = self.input
+        try:
+            mods = pg.key.get_mods()
+        except pg.error:
+            mods = 0
+        ctrl = bool(mods & pg.KMOD_CTRL)
         if key == pg.K_ESCAPE:
             self.mc.display_gui_screen(None)
             return
         if key in (pg.K_RETURN, pg.K_KP_ENTER):
-            text = self.message.strip()
+            text = chat.submit()
             self.mc.display_gui_screen(None)
             if text:
                 send = getattr(self.mc, "send_chat_message", None)
@@ -2103,10 +3268,24 @@ class GuiChat(GuiScreen):
                     send(text)
             return
         if key == pg.K_BACKSPACE:
-            if self.message:
-                self.message = self.message[:-1]
-            return
-        if char:
+            chat.delete_word_back() if ctrl else chat.backspace()
+        elif key == pg.K_DELETE:
+            chat.delete()
+        elif key == pg.K_LEFT:
+            chat.move_word(-1) if ctrl else chat.move(-1)
+        elif key == pg.K_RIGHT:
+            chat.move_word(1) if ctrl else chat.move(1)
+        elif key == pg.K_HOME:
+            chat.home()
+        elif key == pg.K_END:
+            chat.end()
+        elif key == pg.K_UP:
+            chat.history_prev()
+        elif key == pg.K_DOWN:
+            chat.history_next()
+        elif key == pg.K_TAB:
+            chat.complete(self._player_names(), reverse=bool(mods & pg.KMOD_SHIFT))
+        elif char:
             self._append_text(char)
 
     def draw_screen(self, mx, my):
@@ -2126,14 +3305,19 @@ class GuiChat(GuiScreen):
         glColor4f(1.0, 1.0, 1.0, 1.0)
 
         cursor = "_" if (self.update_counter // 6) % 2 == 0 else ""
+        chat = self.input
+        display = self.mc.display
         draw_string(
-            self.mc.display,
-            "> " + self.message + cursor,
+            display,
+            "> " + chat.text + (cursor if chat.caret >= len(chat.text) else ""),
             4,
             self.height - 12,
             0xE0E0E0,
             shadow=False,
         )
+        if cursor and chat.caret < len(chat.text):
+            caret_x = 4 + display.string_width("> " + chat.text[:chat.caret])
+            draw_string(display, "_", caret_x, self.height - 12, 0xE0E0E0, shadow=False)
 
 
 _INVENTORY_TEX_PATH = "game/textures/gui/inventory.png"

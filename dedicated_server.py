@@ -223,6 +223,22 @@ def run_server(args) -> int:
     world_path.mkdir(parents=True, exist_ok=True)
     print(f"Saves directory: {saves_root}", flush=True)
     try:
+        from game.world.savegame import convert_world_to_mcregion, world_needs_conversion
+        if world_needs_conversion(world_path):
+            print("Converting world to McRegion...", flush=True)
+            last_percent = [-10]
+
+            def report_conversion(done, total):
+                percent = int(100 * done / total) if total else 100
+                if percent >= last_percent[0] + 10 or done == total:
+                    last_percent[0] = percent
+                    print(f"Converting world... {percent}%", flush=True)
+
+            convert_world_to_mcregion(world_path, report_conversion)
+    except Exception as exc:
+        print(f"Could not convert world: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    try:
         world = _load_world(world_path, args)
     except Exception as exc:
         print(f"Could not load world: {type(exc).__name__}: {exc}", file=sys.stderr)

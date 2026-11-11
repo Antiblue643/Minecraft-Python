@@ -5,8 +5,7 @@ from OpenGL.GL import (
     GL_VERTEX_ARRAY, GL_TEXTURE_COORD_ARRAY, GL_COLOR_ARRAY,
     glVertexPointer, glTexCoordPointer, glColorPointer, glDrawArrays,
     glEnable, glDisable, GL_TEXTURE_2D, GL_CULL_FACE,
-    GL_TEXTURE0, GL_TEXTURE1, glActiveTexture, glClientActiveTexture,
-    GL_FRONT_AND_BACK, GL_LINE, GL_FILL, glPolygonMode,
+    GL_TEXTURE0, glActiveTexture,
     GL_TRIANGLES, glColor4f,
     GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, glBlendFunc,
     glDepthMask, GL_TRUE, GL_FALSE,
@@ -39,6 +38,26 @@ _UV_OFFSET = c_void_p(12)
 _COLOR_OFFSET = c_void_p(20)
 
 _K_PLAIN, _K_META, _K_DOOR, _K_CHEST, _K_WIRE, _K_FIRE, _K_FLUID, _K_FENCE = range(8)
+
+try:
+    from numba import njit as _njit
+
+    @_njit(cache=True, nogil=True)
+    def _column_all_solid(blocks, base, y0, y1, solid_lut):
+        for y in range(y0, y1):
+            if solid_lut[blocks[base + y]] == 0:
+                return False
+        return True
+
+    _COLUMN_SOLID_NUMBA = True
+except Exception:
+    def _column_all_solid(blocks, base, y0, y1, solid_lut):
+        for y in range(y0, y1):
+            if solid_lut[blocks[base + y]] == 0:
+                return False
+        return True
+
+    _COLUMN_SOLID_NUMBA = False
 def _leaves_tint(meta, biome_tint=None):
     value = int(meta) & 15
     if value & 1:  
@@ -55,6 +74,7 @@ _META_KEYED_MESH_TYPES = frozenset((
     "rail", "crops", "farmland",
     "sapling", "stairs", "cobblestone_stairs",
     "pumpkin", "jack_o_lantern", "wool", "log", "leaves",
+    "stone_slab", "double_stone_slab", "redstone_repeater", "redstone_repeater_on", "bed",
 ))
 _FACE_NEIGHBOR_INDEX = {
     (-1, 0, 0): 0, (1, 0, 0): 1,
@@ -62,9 +82,6 @@ _FACE_NEIGHBOR_INDEX = {
     (0, 0, -1): 4, (0, 0, 1): 5,
     (0, 0, 0): 6,
 }
-GREEDY_MESHING_ENABLED = False
-
-
 class Chunk:
     def __init__(self, world, cx, cz, width, height, depth, renderer,
                  generated_data=None):
@@ -87,19 +104,12 @@ class Chunk:
 
         self.section_height = 4
         self.section_count = (height + self.section_height - 1) // self.section_height
-        self._gb_arr = np.zeros((self.section_count, 6), dtype=np.float64)
-        self._gb_has = np.zeros(self.section_count, dtype=np.bool_)
         self._sections = [
             {
                 "index": _section_index,
                 "mesh_opaque": b"", "mesh_cutout": b"", "mesh_cutout_culled": b"", "mesh_transparent": b"",
-                "mesh_greedy": b"",
-                "greedy_faces": [],
-                "greedy_face_version": 0,
-                "greedy_neighbor_versions": {},
-                "greedy_bounds": None,
-                "count_opaque": 0, "count_cutout": 0, "count_cutout_culled": 0, "count_transparent": 0, "count_greedy": 0,
-                "first_opaque": 0, "first_cutout": 0, "first_cutout_culled": 0, "first_transparent": 0, "first_greedy": 0,
+                "count_opaque": 0, "count_cutout": 0, "count_cutout_culled": 0, "count_transparent": 0,
+                "first_opaque": 0, "first_cutout": 0, "first_cutout_culled": 0, "first_transparent": 0,
                 "built": False,
             }
             for _section_index in range(self.section_count)
@@ -108,12 +118,10 @@ class Chunk:
         self._vbo_cutout = None
         self._vbo_cutout_culled = None
         self._vbo_transparent = None
-        self._vbo_greedy = None
         self._count_opaque = 0
         self._count_cutout = 0
         self._count_cutout_culled = 0
         self._count_transparent = 0
-        self._count_greedy = 0
         self._has_mesh = False
         self._mesh_all_air_cache = None
         self.dirty_sections = set(range(self.section_count))
@@ -405,21 +413,7 @@ class Chunk:
             note((self.cx, self.cz))
 
     def mark_lighting_dirty(self):
-        world = getattr(self, "world", None)
-        greedy_enabled = bool(
-            GREEDY_MESHING_ENABLED
-            and getattr(world, "greedy_meshing_enabled", True)
-        )
-        if not self._has_mesh or not greedy_enabled:
-            self.mark_all_dirty()
-            return
-
-        for section_index, section in enumerate(self._sections):
-            if any(int(section.get(f"count_{layer}", 0)) > 0 for layer in (
-                "opaque", "cutout", "cutout_culled", "transparent",
-            )):
-                self._mark_section_dirty(section_index)
-        self.dirty = bool(self.dirty_sections)
+        self.mark_all_dirty()
 
     def set_block(self, x, y, z, block, meta=0):
         idx = self._index(x, y, z)
@@ -537,10 +531,11 @@ class Chunk:
                 else (block_type, int(meta) & 15, int(wire_flags) & 255) if block_type in ("redstone_wire", "fence")
                 else (block_type, int(meta) & 3, bool(getattr(Block, "_fancy_graphics", True))) if block_type == "leaves"
                 else (block_type, int(meta) & 15) if block_type in (
-                    "torch", "redstone_torch", "unlit_redstone_torch", "lever",
+                    "bed", "torch", "redstone_torch", "unlit_redstone_torch", "lever",
                     "stone_button", "stone_pressure_plate", "wooden_pressure_plate", "ladder", "furnace", "dispenser",
                     "furnace_lit", "chest", "rail", "crops", "farmland", "sapling",
                     "stairs", "cobblestone_stairs", "pumpkin", "jack_o_lantern", "wool", "cake", "log",
+                    "stone_slab", "double_stone_slab", "redstone_repeater", "redstone_repeater_on",
                 )
                 else (block_type, bool(getattr(Block, "_fancy_graphics", True))) if block_type == "leaves"
                 else (block_type, "snowy") if block_type == "grass_block" and int(meta) == 1
@@ -583,14 +578,19 @@ class Chunk:
             block._door_mirror_right = bool(door_mirror_right)
         mesh_data = block.get_mesh_data()
         template = []
-        if block.model_name == "cube":
+        if block_type == "bed":
+            for mesh in mesh_data:
+                direction, vertices, uvs, cull_backface, is_transparent, color = mesh
+                template.append((direction, vertices, uvs, cull_backface, is_transparent, color))
+        elif block.model_name == "cube":
             sources = zip(Block._CUBE_FACES, mesh_data)
             for (name, direction, _quad, _face_cull), mesh in sources:
                 vertices, uvs, cull_backface, is_transparent, color = mesh
                 template.append((direction, vertices, uvs, cull_backface, is_transparent, color))
-        elif block.model_name in ("farmland", "slab", "stairs", "door", "lever", "pressure_plate", "button", "snow_layer", "cactus", "fence", "portal") or block_type in (
+        elif block.model_name in ("farmland", "slab", "stairs", "door", "lever", "pressure_plate", "button", "snow_layer", "cactus", "fence", "portal", "redstone_repeater") or block_type in (
             "farmland", "stone_slab", "stairs", "cobblestone_stairs", "wooden_door", "iron_door", "cactus",
             "lever", "stone_button", "stone_pressure_plate", "wooden_pressure_plate", "snow", "fence",
+            "redstone_repeater", "redstone_repeater_on",
         ):
             for mesh in mesh_data:
                 direction, vertices, uvs, cull_backface, is_transparent, color = mesh
@@ -644,102 +644,6 @@ class Chunk:
         return neighbor.blocks[(nx * neighbor.depth + nz) * neighbor.height + ny]
 
     @staticmethod
-    def _world_greedy_face(face, start_x, start_z):
-        direction = face.direction
-        plane, u, v = face.plane, face.u, face.v
-        dx, dy, dz = direction
-        if dx == 1:
-            plane, u = plane + 2 * start_x, u - start_z
-        elif dx == -1:
-            plane, u = plane + 2 * start_x, u + start_z
-        elif dy == 1:
-            u, v = u + start_x, v - start_z
-        elif dy == -1:
-            u, v = u + start_x, v + start_z
-        elif dz == 1:
-            plane, u = plane + 2 * start_z, u + start_x
-        elif dz == -1:
-            plane, u = plane + 2 * start_z, u - start_x
-        return type(face)(
-            direction, plane, u, v, face.block_id, face.atlas_index, face.color,
-            getattr(face, "sky_light", 15), getattr(face, "block_light", 0),
-        )
-
-    @staticmethod
-    def _greedy_face_chunk(quad, width, depth):
-        dx, dy, dz = quad.direction
-        if dx == 1:
-            x, z = (quad.plane - 1) // 2, -quad.u
-        elif dx == -1:
-            x, z = (quad.plane + 1) // 2, quad.u
-        elif dy == 1:
-            x, z = quad.u, -quad.v
-        elif dy == -1:
-            x, z = quad.u, quad.v
-        elif dz == 1:
-            x, z = quad.u, (quad.plane - 1) // 2
-        else:
-            x, z = -quad.u, (quad.plane + 1) // 2
-        return x // width, z // depth
-
-    def _store_greedy_faces(self, section, faces):
-        previous = section.get("greedy_faces", [])
-        if previous == faces:
-            return False
-        section["greedy_faces"] = faces
-        section["greedy_face_version"] = section.get("greedy_face_version", 0) + 1
-        return bool(previous or faces)
-
-    def _store_greedy_bounds(self, section, bounds):
-        if section.get("greedy_bounds") == bounds:
-            return
-        section["greedy_bounds"] = bounds
-        index = section.get("index")
-        if index is None:
-            for candidate_index, candidate in enumerate(self._sections):
-                if candidate is section:
-                    index = candidate_index
-                    break
-        if index is not None:
-            if bounds is None:
-                self._gb_has[index] = False
-            else:
-                self._gb_arr[index, :] = bounds
-                self._gb_has[index] = True
-        world = self.world
-        world._cull_cache_key = None
-        try:
-            world._greedy_bounds_version = getattr(world, "_greedy_bounds_version", 0) + 1
-        except Exception:
-            pass
-
-    def _invalidate_greedy_face_neighbors(self, section_index):
-        section = self._sections[section_index]
-        version = section.get("greedy_face_version", 0)
-        neighbors = (
-            (self.cx - 1, self.cz - 1), (self.cx, self.cz - 1),
-            (self.cx + 1, self.cz - 1), (self.cx - 1, self.cz),
-            (self.cx + 1, self.cz), (self.cx - 1, self.cz + 1),
-            (self.cx, self.cz + 1), (self.cx + 1, self.cz + 1),
-        )
-        for key in neighbors:
-            neighbor = self.world.chunks.get(key)
-            if neighbor is None or section_index >= len(neighbor._sections):
-                continue
-            neighbor_section = neighbor._sections[section_index]
-            if (not neighbor_section.get("built")
-                    or section_index in neighbor.dirty_sections):
-                continue
-            versions = neighbor_section.get("greedy_neighbor_versions", {})
-            if versions.get((self.cx, self.cz)) == version:
-                continue
-            mark_dirty = getattr(neighbor, "_mark_section_dirty", None)
-            if mark_dirty is not None:
-                mark_dirty(section_index)
-            else:
-                neighbor.mark_dirty_at(section_index * neighbor.section_height)
-
-    @staticmethod
     def _is_face_hidden(n_cull, block_id, neighbor_id, defs_by_id, is_transparent=False):
         return face_is_hidden(n_cull, block_id, neighbor_id, defs_by_id, is_transparent)
 
@@ -756,7 +660,6 @@ class Chunk:
         solid_lut = bytearray(256)
         skip_lut = bytearray(256)
         partial_model_lut = bytearray(256)
-        greedy_lut = bytearray(256)
         for block_id in range(1, n_ids):
             btype = id_to_type[block_id]
             definition = Block._block_defs.get(btype, {})
@@ -791,17 +694,11 @@ class Chunk:
                     solid_lut[block_id] = 1
                     if model == "cube" and kind == _K_PLAIN:
                         skip_lut[block_id] = 1
-                if (block_id < 256 and model == "cube" and kind == _K_PLAIN
-                        and (n_cull == "all" or btype == "leaves")
-                        and not is_partial
-                        and not definition.get("cutoutCullBackfaces", False)
-                        and not definition.get("transparent", False)):
-                    greedy_lut[block_id] = 1
         solid_translate = bytes(solid_lut)
         snow_id = id_to_type.index("snow") if "snow" in id_to_type else 0
         payload = (
             defs_by_id, id_info, solid_lut, skip_lut, partial_model_lut,
-            greedy_lut, solid_translate, snow_id, n_ids,
+            solid_translate, snow_id, n_ids,
         )
         world._mesh_lut_cache = (n_ids, payload)
         return payload
@@ -822,11 +719,24 @@ class Chunk:
             return
 
         from engine.lighting import face_color as _face_color, face_shade as _face_shade
+        from game.rendering.smooth_lighting import (
+            block_ao_occludes, is_full_voxel_face, smooth_face_colors,
+        )
         hell_lighting = bool(getattr(self.world, "is_hell_world", False))
+        smooth_lighting_enabled = bool(
+            getattr(self.world, "smooth_lighting_enabled", True)
+        )
 
         (defs_by_id, id_info, solid_lut, skip_lut, partial_model_lut,
-         greedy_lut, solid_translate, snow_id, n_ids) = self._mesh_luts()
+         solid_translate, snow_id, n_ids) = self._mesh_luts()
         id_to_type = self._id_to_block_type
+        ao_occluder_lut = bytearray(256)
+        for ao_block_id in range(1, min(n_ids, len(ao_occluder_lut))):
+            ao_block_type = id_to_type[ao_block_id]
+            ao_definition = defs_by_id[ao_block_id]
+            ao_occluder_lut[ao_block_id] = int(
+                block_ao_occludes(ao_block_type, ao_definition)
+            )
 
         blocks = self.blocks
         metadata = self.metadata
@@ -842,23 +752,16 @@ class Chunk:
         if all_air:
             for section_idx in section_indices:
                 section = self._sections[section_idx]
-                faces_changed = self._store_greedy_faces(section, [])
-                section["greedy_neighbor_versions"] = {}
-                self._store_greedy_bounds(section, None)
                 section["mesh_opaque"] = b""
                 section["mesh_cutout"] = b""
                 section["mesh_cutout_culled"] = b""
                 section["mesh_transparent"] = b""
-                section["mesh_greedy"] = b""
                 section["count_opaque"] = 0
                 section["count_cutout"] = 0
                 section["count_cutout_culled"] = 0
                 section["count_transparent"] = 0
-                section["count_greedy"] = 0
                 section["built"] = True
                 self.dirty_sections.discard(section_idx)
-                if faces_changed:
-                    self._invalidate_greedy_face_neighbors(section_idx)
             self.dirty = bool(self.dirty_sections)
             profiler = getattr(self.world, "profiler", None)
             if profiler is not None:
@@ -935,18 +838,50 @@ class Chunk:
                 int(n_block[idx]) if idx < len(n_block) else 0,
             )
 
-        active_face_light_components = None
-
         def sample_light(lx, y, lz) -> int:
             sky, block = sample_light_components(lx, y, lz)
-            active = active_face_light_components
-            if active is not None:
-                if sky > active[0]:
-                    active[0] = sky
-                if block > active[1]:
-                    active[1] = block
             effective_sky = sky if sky_sub is None else max(0, sky - sky_sub)
             return min(15, max(effective_sky, block))
+
+        def sample_block_id(lx, y, lz):
+            if y < 0 or y >= height:
+                return 0
+            if 0 <= lx < width and 0 <= lz < depth:
+                return blocks[(lx * depth + lz) * height + y]
+
+            chunk_dx = -1 if lx < 0 else (1 if lx >= width else 0)
+            chunk_dz = -1 if lz < 0 else (1 if lz >= depth else 0)
+            neighbor = world_chunks.get((cx_self + chunk_dx, cz_self + chunk_dz))
+            if neighbor is None:
+                return 0
+            neighbor_x = lx % neighbor.width
+            neighbor_z = lz % neighbor.depth
+            index = (neighbor_x * neighbor.depth + neighbor_z) * neighbor.height + y
+            if index < 0 or index >= len(neighbor.blocks):
+                return 0
+            return neighbor.blocks[index]
+
+        def sample_ao_occluder(position):
+            block_id = sample_block_id(*position)
+            return bool(0 <= block_id < len(ao_occluder_lut)
+                        and ao_occluder_lut[block_id])
+
+        smooth_light_cache = {}
+        smooth_ao_cache = {}
+
+        def sample_smooth_light(position):
+            value = smooth_light_cache.get(position)
+            if value is None:
+                value = sample_light(*position)
+                smooth_light_cache[position] = value
+            return value
+
+        def sample_smooth_ao_occluder(position):
+            value = smooth_ao_cache.get(position)
+            if value is None:
+                value = sample_ao_occluder(position)
+                smooth_ao_cache[position] = value
+            return value
 
         west = world_chunks.get((cx_self - 1, cz_self))
         east = world_chunks.get((cx_self + 1, cz_self))
@@ -957,20 +892,34 @@ class Chunk:
         east_blocks = east.blocks if east is not None else None
         north_blocks = north.blocks if north is not None else None
         south_blocks = south.blocks if south is not None else None
+        blocks_u8 = np.frombuffer(blocks, dtype=np.uint8)
+        try:
+            solid_lut_u8 = np.frombuffer(solid_lut, dtype=np.uint8)
+        except TypeError:
+            solid_lut_u8 = np.asarray(solid_lut, dtype=np.uint8)
+        air_u8 = np.frombuffer(air_column, dtype=np.uint8)
+        west_u8 = (
+            np.frombuffer(west_blocks, dtype=np.uint8)
+            if west_blocks is not None else air_u8
+        )
+        east_u8 = (
+            np.frombuffer(east_blocks, dtype=np.uint8)
+            if east_blocks is not None else air_u8
+        )
+        north_u8 = (
+            np.frombuffer(north_blocks, dtype=np.uint8)
+            if north_blocks is not None else air_u8
+        )
+        south_u8 = (
+            np.frombuffer(south_blocks, dtype=np.uint8)
+            if south_blocks is not None else air_u8
+        )
         x_stride = depth * height
         top_y = height - 1
 
         profiler = getattr(self.world, "profiler", None)
         mesh_scan_ms = 0.0
         mesh_pack_ms = 0.0
-        greedy_enabled = bool(
-            GREEDY_MESHING_ENABLED
-            and getattr(self.world, "greedy_meshing_enabled", True)
-        )
-        if greedy_enabled:
-            from game.rendering.greedy_meshing import (
-                GreedyFace, greedy_quad_geometry, merge_greedy_faces,
-            )
         hidden_cache = bytearray(n_ids * 256 * 2)
         face_color_cache: dict = {}
         for section_idx in section_indices:
@@ -990,23 +939,16 @@ class Chunk:
                 if not section_air:
                     break
             if section_air:
-                faces_changed = self._store_greedy_faces(section, [])
-                section["greedy_neighbor_versions"] = {}
-                self._store_greedy_bounds(section, None)
                 section["mesh_opaque"] = b""
                 section["mesh_cutout"] = b""
                 section["mesh_cutout_culled"] = b""
                 section["mesh_transparent"] = b""
-                section["mesh_greedy"] = b""
                 section["count_opaque"] = 0
                 section["count_cutout"] = 0
                 section["count_cutout_culled"] = 0
                 section["count_transparent"] = 0
-                section["count_greedy"] = 0
                 section["built"] = True
                 self.dirty_sections.discard(section_idx)
-                if faces_changed:
-                    self._invalidate_greedy_face_neighbors(section_idx)
                 mesh_scan_ms += (time.perf_counter() - section_scan_start) * 1000.0
                 continue
 
@@ -1015,7 +957,6 @@ class Chunk:
             cutout = []
             cutout_culled = []
             transparent = []
-            greedy_faces = []
             opaque_extend = opaque.extend
             cutout_extend = cutout.extend
             cutout_culled_extend = cutout_culled.extend
@@ -1029,39 +970,43 @@ class Chunk:
                         continue
 
                     if lx > 0:
-                        xm, xm_base = blocks, base - x_stride
+                        xm, xm_base, xm_u8 = blocks, base - x_stride, blocks_u8
                     else:
                         xm = west_blocks if west_blocks is not None else air_column
                         xm_base = ((width - 1) * depth + lz) * height if west_blocks is not None else 0
+                        xm_u8 = west_u8
                     if lx < width - 1:
-                        xp, xp_base = blocks, base + x_stride
+                        xp, xp_base, xp_u8 = blocks, base + x_stride, blocks_u8
                     else:
                         xp = east_blocks if east_blocks is not None else air_column
                         xp_base = lz * height if east_blocks is not None else 0
+                        xp_u8 = east_u8
                     if lz > 0:
-                        zm, zm_base = blocks, base - height
+                        zm, zm_base, zm_u8 = blocks, base - height, blocks_u8
                     else:
                         zm = north_blocks if north_blocks is not None else air_column
                         zm_base = (lx * depth + depth - 1) * height if north_blocks is not None else 0
+                        zm_u8 = north_u8
                     if lz < depth - 1:
-                        zp, zp_base = blocks, base + height
+                        zp, zp_base, zp_u8 = blocks, base + height, blocks_u8
                     else:
                         zp = south_blocks if south_blocks is not None else air_column
                         zp_base = lx * depth * height if south_blocks is not None else 0
+                        zp_u8 = south_u8
 
                     if y_start > 0 and y_end <= top_y:
                         if (solid_lut[blocks[base + y_start - 1]]
                                 and solid_lut[blocks[base + y_end]]
-                                and blocks[base + y_start:base + y_end]
-                                    .translate(solid_translate).count(0) == 0
-                                and xm[xm_base + y_start:xm_base + y_end]
-                                    .translate(solid_translate).count(0) == 0
-                                and xp[xp_base + y_start:xp_base + y_end]
-                                    .translate(solid_translate).count(0) == 0
-                                and zm[zm_base + y_start:zm_base + y_end]
-                                    .translate(solid_translate).count(0) == 0
-                                and zp[zp_base + y_start:zp_base + y_end]
-                                    .translate(solid_translate).count(0) == 0):
+                                and _column_all_solid(
+                                    blocks_u8, base, y_start, y_end, solid_lut_u8)
+                                and _column_all_solid(
+                                    xm_u8, xm_base, y_start, y_end, solid_lut_u8)
+                                and _column_all_solid(
+                                    xp_u8, xp_base, y_start, y_end, solid_lut_u8)
+                                and _column_all_solid(
+                                    zm_u8, zm_base, y_start, y_end, solid_lut_u8)
+                                and _column_all_solid(
+                                    zp_u8, zp_base, y_start, y_end, solid_lut_u8)):
                             continue
 
                     for y in range(y_start, y_end):
@@ -1234,11 +1179,6 @@ class Chunk:
                                 )
                                 own_l_cache = min(15, max(effective_own_sky, own_block))
                             own_l = own_l_cache
-                            face_light_components = [
-                                int(own_l_components_cache[0]),
-                                int(own_l_components_cache[1]),
-                            ]
-                            active_face_light_components = face_light_components
                             if is_fluid:
                                 if dy > 0:
                                     light_level = max(own_l, sample_light(lx, y + 1, lz))
@@ -1306,9 +1246,13 @@ class Chunk:
                                 face_rgb = _face_color(direction, light_level, hell=hell_lighting)
                                 face_color_cache[color_key] = face_rgb
                             r, g, b = face_rgb
+                            if btype == "redstone_wire":
+                                r *= float(color[0])
+                                g *= float(color[1])
+                                b *= float(color[2])
+                            tint = None
                             if biome_tints or btype == "leaves":
                                 tint_pair = biome_tints.get((lx, lz)) if biome_tints else None
-                                tint = None
                                 if btype == "grass_block" and direction == (0, 1, 0):
                                     tint = tint_pair[0] if tint_pair else None
                                 elif btype == "leaves":
@@ -1319,115 +1263,42 @@ class Chunk:
                                     g *= tint[1] / 255.0
                                     b *= tint[2] / 255.0
 
-                            if (greedy_enabled and greedy_lut[block_id]
-                                    and not is_transparent and cull_backface):
-                                tile_col = max(0, min(15, int(uvs[0][0] * 16.0)))
-                                tile_from_bottom = max(
-                                    0, min(15, int(uvs[0][1] * 16.0))
+                            vertex_colors = ((r, g, b),) * 4
+                            if (smooth_lighting_enabled and not is_fluid
+                                    and is_full_voxel_face(direction, vertices)):
+                                vertex_colors = smooth_face_colors(
+                                    direction, vertices, (lx, y, lz),
+                                    sample_smooth_light,
+                                    sample_smooth_ao_occluder,
+                                    hell=hell_lighting,
                                 )
-                                atlas_index = tile_col + (15 - tile_from_bottom) * 16
-                                if direction == (1, 0, 0):
-                                    plane, u, v = 2 * lx + 1, -lz, y
-                                elif direction == (-1, 0, 0):
-                                    plane, u, v = 2 * lx - 1, lz, y
-                                elif direction == (0, 1, 0):
-                                    plane, u, v = 2 * y + 1, lx, -lz
-                                elif direction == (0, -1, 0):
-                                    plane, u, v = 2 * y - 1, lx, lz
-                                elif direction == (0, 0, 1):
-                                    plane, u, v = 2 * lz + 1, lx, y
-                                elif direction == (0, 0, -1):
-                                    plane, u, v = 2 * lz - 1, -lx, y
-                                else:
-                                    plane = None
-                                if plane is not None:
-                                    base_shade = _face_shade(direction)
-                                    base_rgb = (base_shade, base_shade, base_shade)
-                                    if biome_tints or btype == "leaves":
-                                        tint_pair = biome_tints.get((lx, lz)) if biome_tints else None
-                                        tint = None
-                                        if btype == "grass_block" and direction == (0, 1, 0):
-                                            tint = tint_pair[0] if tint_pair else None
-                                        elif btype == "leaves":
-                                            biome_leaf_tint = tint_pair[1] if tint_pair else None
-                                            tint = _leaves_tint(meta, biome_leaf_tint)
-                                        if tint is not None:
-                                            base_rgb = (
-                                                base_rgb[0] * tint[0] / 255.0,
-                                                base_rgb[1] * tint[1] / 255.0,
-                                                base_rgb[2] * tint[2] / 255.0,
-                                            )
-                                    greedy_faces.append(GreedyFace(
-                                        direction, plane, u, v, block_id,
-                                        atlas_index, base_rgb,
-                                        face_light_components[0],
-                                        face_light_components[1],
-                                    ))
-                                    active_face_light_components = None
-                                    continue
+                                tint_scale = (
+                                    (tint[0] / 255.0, tint[1] / 255.0, tint[2] / 255.0)
+                                    if tint is not None else (1.0, 1.0, 1.0)
+                                )
+                                vertex_colors = tuple(
+                                    (
+                                        rgb[0] * tint_scale[0],
+                                        rgb[1] * tint_scale[1],
+                                        rgb[2] * tint_scale[2],
+                                    )
+                                    for rgb in vertex_colors
+                                )
 
-                            active_face_light_components = None
                             v0, v1, v2, v3 = vertices
                             u0, u1, u2, u3 = uvs
-                            target_extend((
-                                lx + v0[0], y + v0[1], lz + v0[2], u0[0], u0[1], r, g, b,
-                                lx + v1[0], y + v1[1], lz + v1[2], u1[0], u1[1], r, g, b,
-                                lx + v2[0], y + v2[1], lz + v2[2], u2[0], u2[1], r, g, b,
-                                lx + v0[0], y + v0[1], lz + v0[2], u0[0], u0[1], r, g, b,
-                                lx + v2[0], y + v2[1], lz + v2[2], u2[0], u2[1], r, g, b,
-                                lx + v3[0], y + v3[1], lz + v3[2], u3[0], u3[1], r, g, b,
-                            ))
-
-            greedy_vertices = []
-            world_greedy_faces = [
-                self._world_greedy_face(face, start_x, start_z)
-                for face in greedy_faces
-            ]
-            greedy_neighbor_versions = {}
-            merge_faces = list(world_greedy_faces)
-            if greedy_enabled and world_greedy_faces:
-                neighbor_keys = (
-                    (cx_self - 1, cz_self - 1), (cx_self, cz_self - 1),
-                    (cx_self + 1, cz_self - 1), (cx_self - 1, cz_self),
-                    (cx_self + 1, cz_self), (cx_self - 1, cz_self + 1),
-                    (cx_self, cz_self + 1), (cx_self + 1, cz_self + 1),
-                )
-                for neighbor_key in neighbor_keys:
-                    neighbor = world_chunks.get(neighbor_key)
-                    if neighbor is None or section_idx >= len(neighbor._sections):
-                        continue
-                    neighbor_section = neighbor._sections[section_idx]
-                    if not neighbor_section.get("built"):
-                        continue
-                    merge_faces.extend(neighbor_section.get("greedy_faces", ()))
-                    greedy_neighbor_versions[neighbor_key] = neighbor_section.get(
-                        "greedy_face_version", 0,
-                    )
-
-            if greedy_faces:
-                for greedy_quad in merge_greedy_faces(merge_faces):
-                    if self._greedy_face_chunk(
-                            greedy_quad, width, depth) != (cx_self, cz_self):
-                        continue
-                    quad_vertices, quad_uvs = greedy_quad_geometry(
-                        greedy_quad, origin_x=start_x, origin_z=start_z,
-                    )
-                    r, g, b = greedy_quad.color
-                    tile_col = greedy_quad.atlas_index % 16
-                    tile_row = greedy_quad.atlas_index // 16
-                    atlas_origin = (
-                        tile_col / 16.0,
-                        1.0 - (tile_row + 1) / 16.0,
-                    )
-                    for vertex_index in (0, 1, 2, 0, 2, 3):
-                        x, y, z = quad_vertices[vertex_index]
-                        u, v = quad_uvs[vertex_index]
-                        greedy_vertices.extend((
-                            x, y, z, u, v, r, g, b,
-                            atlas_origin[0], atlas_origin[1],
-                            float(greedy_quad.sky_light),
-                            float(greedy_quad.block_light),
-                        ))
+                            face_vertices = (
+                                (v0, u0), (v1, u1), (v2, u2),
+                                (v0, u0), (v2, u2), (v3, u3),
+                            )
+                            for vertex_index, (vertex, uv) in zip(
+                                (0, 1, 2, 0, 2, 3), face_vertices,
+                            ):
+                                vertex_r, vertex_g, vertex_b = vertex_colors[vertex_index]
+                                target_extend((
+                                    lx + vertex[0], y + vertex[1], lz + vertex[2],
+                                    uv[0], uv[1], vertex_r, vertex_g, vertex_b,
+                                ))
 
             scan_finished = time.perf_counter()
             mesh_scan_ms += (scan_finished - section_scan_start) * 1000.0
@@ -1436,18 +1307,6 @@ class Chunk:
             cutout_arr = array('f', cutout)
             cutout_culled_arr = array('f', cutout_culled)
             transparent_arr = array('f', transparent)
-            greedy_arr = array('f', greedy_vertices)
-            greedy_bounds = None
-            if greedy_vertices:
-                greedy_bounds = (
-                    min(greedy_vertices[0::12]) + start_x,
-                    min(greedy_vertices[1::12]),
-                    min(greedy_vertices[2::12]) + start_z,
-                    max(greedy_vertices[0::12]) + start_x,
-                    max(greedy_vertices[1::12]),
-                    max(greedy_vertices[2::12]) + start_z,
-                )
-            self._store_greedy_bounds(section, greedy_bounds)
             section["mesh_opaque"] = opaque_arr.tobytes()
             section["count_opaque"] = len(opaque_arr) // 8
             section["mesh_cutout"] = cutout_arr.tobytes()
@@ -1456,16 +1315,8 @@ class Chunk:
             section["count_cutout_culled"] = len(cutout_culled_arr) // 8
             section["mesh_transparent"] = transparent_arr.tobytes()
             section["count_transparent"] = len(transparent_arr) // 8
-            faces_changed = self._store_greedy_faces(
-                section, world_greedy_faces,
-            )
-            section["greedy_neighbor_versions"] = greedy_neighbor_versions
-            section["mesh_greedy"] = greedy_arr.tobytes()
-            section["count_greedy"] = len(greedy_arr) // 12
             section["built"] = True
             self.dirty_sections.discard(section_idx)
-            if faces_changed:
-                self._invalidate_greedy_face_neighbors(section_idx)
             mesh_pack_ms += (time.perf_counter() - pack_start) * 1000.0
 
         self.dirty = bool(self.dirty_sections)
@@ -1480,7 +1331,6 @@ class Chunk:
             cutout_data = b"".join(section["mesh_cutout"] for section in self._sections)
             cutout_culled_data = b"".join(section["mesh_cutout_culled"] for section in self._sections)
             transparent_data = b"".join(section["mesh_transparent"] for section in self._sections)
-            greedy_data = b"".join(section["mesh_greedy"] for section in self._sections)
             if profiler is not None:
                 profiler.record_since("mesh.merge", merge_start)
             upload_start = time.perf_counter()
@@ -1492,14 +1342,12 @@ class Chunk:
             self._count_cutout_culled = len(cutout_culled_data) // _STRIDE
             self._vbo_transparent = self._upload_vbo(self._vbo_transparent, transparent_data)
             self._count_transparent = len(transparent_data) // _STRIDE
-            self._vbo_greedy = self._upload_vbo(self._vbo_greedy, greedy_data)
-            self._count_greedy = len(greedy_data) // (12 * 4)
             if profiler is not None:
                 profiler.record_since("mesh.upload", upload_start)
 
             offsets = {
                 "opaque": 0, "cutout": 0, "cutout_culled": 0,
-                "transparent": 0, "greedy": 0,
+                "transparent": 0,
             }
             for section in self._sections:
                 for layer in offsets:
@@ -1559,92 +1407,6 @@ class Chunk:
         return len(draw_ranges)
 
     @staticmethod
-    def _draw_greedy_chunks(entries, *, shared_state=False):
-        if not GREEDY_MESHING_ENABLED:
-            return 0
-        greedy_entries = [
-            (chunk, sections) for chunk, sections in entries
-            if chunk._count_greedy and chunk._vbo_greedy
-        ]
-        if not greedy_entries:
-            return 0
-
-        from game.rendering.greedy_meshing import (
-            bind_greedy_shader, unbind_greedy_shader,
-        )
-
-        glActiveTexture(GL_TEXTURE0)
-        glClientActiveTexture(GL_TEXTURE0)
-        if not shared_state:
-            glEnableClientState(GL_VERTEX_ARRAY)
-            glEnableClientState(GL_TEXTURE_COORD_ARRAY)
-            glEnableClientState(GL_COLOR_ARRAY)
-
-        glClientActiveTexture(GL_TEXTURE1)
-        glEnableClientState(GL_TEXTURE_COORD_ARRAY)
-        glClientActiveTexture(GL_TEXTURE0)
-
-        renderer = greedy_entries[0][0].renderer
-        world = getattr(greedy_entries[0][0], "world", None)
-        render_sky_sub = getattr(world, "get_render_skylight_subtracted", None)
-        if callable(render_sky_sub):
-            sky_subtracted = float(render_sky_sub())
-        else:
-            lighting = getattr(world, "lighting", None)
-            sky_subtracted = float(getattr(lighting, "skylight_subtracted", 0.0))
-        bind_greedy_shader(
-            radial_fog=bool(
-                renderer is not None
-                and getattr(renderer, "_supports_nv_fog_distance", False)
-            ),
-            skylight_subtracted=sky_subtracted,
-        )
-        draw_calls = 0
-        try:
-            for chunk, sections in greedy_entries:
-                renderer = chunk.renderer
-                if renderer is not None:
-                    ox, oy, oz = renderer.camera_relative_offset(
-                        chunk.start_x, 0.0, chunk.start_z
-                    )
-                else:
-                    ox, oy, oz = float(chunk.start_x), 0.0, float(chunk.start_z)
-
-                glPushMatrix()
-                glTranslatef(ox, oy, oz)
-                glBindBuffer(GL_ARRAY_BUFFER, chunk._vbo_greedy)
-                stride = 12 * 4
-                glVertexPointer(3, GL_FLOAT, stride, c_void_p(0))
-                glTexCoordPointer(2, GL_FLOAT, stride, c_void_p(12))
-                glColorPointer(3, GL_FLOAT, stride, c_void_p(20))
-                glClientActiveTexture(GL_TEXTURE1)
-                glTexCoordPointer(4, GL_FLOAT, stride, c_void_p(32))
-                glClientActiveTexture(GL_TEXTURE0)
-
-                for first_section, last_section in Chunk._section_runs(
-                    sections, chunk.section_count,
-                ):
-                    first_vertex = chunk._sections[first_section]["first_greedy"]
-                    last = chunk._sections[last_section]
-                    end_vertex = last["first_greedy"] + last["count_greedy"]
-                    count = end_vertex - first_vertex
-                    if count:
-                        glDrawArrays(GL_TRIANGLES, first_vertex, count)
-                        draw_calls += 1
-                glPopMatrix()
-        finally:
-            glBindBuffer(GL_ARRAY_BUFFER, 0)
-            glClientActiveTexture(GL_TEXTURE1)
-            glDisableClientState(GL_TEXTURE_COORD_ARRAY)
-            glClientActiveTexture(GL_TEXTURE0)
-            if not shared_state:
-                glDisableClientState(GL_COLOR_ARRAY)
-                glDisableClientState(GL_TEXTURE_COORD_ARRAY)
-                glDisableClientState(GL_VERTEX_ARRAY)
-            unbind_greedy_shader()
-        return draw_calls
-
-    @staticmethod
     def draw_batch(chunk_sections, phase="all"):
         draw_solid = phase in ("all", "opaque")
         draw_translucent = phase in ("all", "transparent")
@@ -1658,7 +1420,6 @@ class Chunk:
 
         profiler = getattr(entries[0][0].world, "profiler", None)
         gpu_profiler = getattr(entries[0][0].world, "gpu_timer_profiler", None)
-        wireframe = bool(getattr(entries[0][0].world, "debug_wireframe", False))
         texture = Block._get_texture()
         glActiveTexture(GL_TEXTURE0)
         glEnable(GL_TEXTURE_2D)
@@ -1686,8 +1447,6 @@ class Chunk:
             glPopMatrix()
             return draw_calls
 
-        if draw_solid and wireframe:
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         if draw_solid:
             opaque_started = time.perf_counter()
             opaque_draw_calls = 0
@@ -1702,9 +1461,6 @@ class Chunk:
                         opaque_draw_calls += _draw_chunk_layer(
                             chunk, sections, chunk._vbo_opaque, "opaque"
                         )
-                opaque_draw_calls += Chunk._draw_greedy_chunks(
-                    entries, shared_state=True,
-                )
 
             glDisable(GL_CULL_FACE)
             glAlphaFunc(GL_GREATER, 0.5)
@@ -1741,8 +1497,6 @@ class Chunk:
                         "draw_calls": opaque_draw_calls,
                     },
                 )
-        if draw_solid and wireframe:
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
         if draw_translucent and any(chunk._count_transparent for chunk, _ in entries):
             collect_started = time.perf_counter()
@@ -1827,11 +1581,7 @@ class Chunk:
                         "gpu.transparent_draw",
                         {"quads": len(sorted_vertices) // FLOATS_PER_QUAD},
                       ) if gpu_profiler is not None else nullcontext()):
-                    if wireframe:
-                        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
                     glDrawArrays(GL_TRIANGLES, 0, len(sorted_vertices) // 8)
-                    if wireframe:
-                        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
                 if profiler is not None:
                     profiler.record_ms(
                         "render.transparent_draw",
@@ -1876,9 +1626,6 @@ class Chunk:
         if self._count_opaque:
             glEnable(GL_CULL_FACE)
             self._draw_vbo_ranges(self._vbo_opaque, "opaque", visible_sections)
-        self._draw_greedy_chunks(
-            [(self, visible_sections)], shared_state=False,
-        )
         if self._count_cutout:
             glDisable(GL_CULL_FACE)
             self._draw_vbo_ranges(self._vbo_cutout, "cutout", visible_sections)

@@ -1,8 +1,5 @@
 {
   "id": "controller",
-  "name": "Controller Support",
-  "version": "1.0",
-  "description": "Play with a controller.",
   "entry": "mod.py",
   "default_enabled": true
 }

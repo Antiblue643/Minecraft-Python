@@ -288,6 +288,74 @@ def cmd_stop(ctx: CommandContext, args: list[str]) -> None:
     ctx.game.running = False
 
 
+_DAY_TICKS = 24000
+_TIME_NAMES = {"day": 0, "noon": 6000, "night": 12000, "midnight": 18000}
+
+
+def _sync_world_time(ctx: CommandContext) -> None:
+    world = ctx.world
+    update = getattr(world, "_update_skylight_subtracted", None)
+    if callable(update):
+        update()
+    server = getattr(ctx.session, "server", None)
+    if server is None:
+        return
+    current = int(world.world_time)
+    set_metadata = getattr(server, "set_world_metadata", None)
+    if callable(set_metadata):
+        set_metadata(current, bool(getattr(world, "snow_covered", False)))
+    broadcast = getattr(server, "broadcast_world_event", None)
+    if callable(broadcast):
+        from game.multiplayer import protocol as P
+        broadcast(P.world_event("time", world_time=current))
+
+
+def cmd_time(ctx: CommandContext, args: list[str]) -> None:
+    if not _require_operator(ctx):
+        return
+    world = ctx.world
+    if world is None or not args:
+        _reply(ctx, "timeUsage")
+        return
+    action = args[0].lower()
+    current = int(world.world_time)
+    if action == "query" and len(args) == 1:
+        _reply(ctx, "timeQuery", current % _DAY_TICKS, current // _DAY_TICKS)
+        return
+    if action not in ("set", "add") or len(args) != 2:
+        _reply(ctx, "timeUsage")
+        return
+    token = args[1].lower()
+    if action == "set" and token in _TIME_NAMES:
+        value = _TIME_NAMES[token]
+    else:
+        try:
+            value = int(token)
+        except ValueError:
+            _reply(ctx, "timeInvalid")
+            return
+        if value < 0:
+            _reply(ctx, "timeInvalid")
+            return
+    set_time = getattr(world, "set_world_time", None)
+    if action == "set":
+        new_time = current - current % _DAY_TICKS + value % _DAY_TICKS
+        if callable(set_time):
+            set_time(new_time)
+        else:
+            world.world_time = new_time
+        _sync_world_time(ctx)
+        _reply(ctx, "timeSet", world.world_time % _DAY_TICKS)
+    else:
+        new_time = current + value
+        if callable(set_time):
+            set_time(new_time)
+        else:
+            world.world_time = new_time
+        _sync_world_time(ctx)
+        _reply(ctx, "timeAdded", value)
+
+
 def cmd_help(ctx: CommandContext, args: list[str]) -> None:
     names = sorted(COMMANDS.keys())
     _reply(ctx, "commands", ", ".join("/" + n for n in names))
@@ -539,6 +607,7 @@ COMMANDS: dict[str, Callable[[CommandContext, list[str]], None]] = {
     "pardon-ip": cmd_pardon_ip,
     "unipban": cmd_pardon_ip,
     "whitelist": cmd_whitelist,
+    "time": cmd_time,
 }
 
 _PREPROCESSORS: dict[str, Callable[[str, CommandContext], str]] = {}

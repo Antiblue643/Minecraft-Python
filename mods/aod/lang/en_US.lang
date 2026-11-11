@@ -1,0 +1,10 @@
+mod.name=Advent of Destruction
+mod.description=Unleash your destructive capabilities!
+item.corruptor_arrow.name=Corruptor Arrow
+tile.corruptor_tnt.name=Corruptor TNT
+tile.kinoko.name=Kinoko
+tile.photobomb.name=Photobomb
+tile.photon_lamp.name=Photon Lamp
+tile.tesla.name=Tesla
+tile.magnifying_glass.name=Magnifying Glass
+tile.fallout.name=Fallout

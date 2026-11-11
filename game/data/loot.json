@@ -14,7 +14,8 @@
     "unlit_redstone_torch": "redstone_torch",
     "snow": "snowball",
     "reed": "reeds",
-    "glowstone": "glowstone_dust"
+    "glowstone": "glowstone_dust",
+    "redstone_repeater_on": "redstone_repeater"
   },
   "blocks_that_drop_nothing": [
     "glass",
@@ -68,6 +69,12 @@
       "rule": "bit_clear",
       "bit": 8,
       "success_item": "iron_door",
+      "fallback_item": null
+    },
+    "bed": {
+      "rule": "bit_clear",
+      "bit": 8,
+      "success_item": "bed",
       "fallback_item": null
     },
     "snow_block": {

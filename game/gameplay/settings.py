@@ -69,6 +69,7 @@ class Option:
         "limit_framerate": "options.limitFramerate",
         "fancy_graphics": "options.graphics",
         "difficulty": "options.difficulty",
+        "smooth_lighting": "options.ao",
     }
 
     def __init__(self, attr, label, choices=None):
@@ -182,12 +183,14 @@ class GameSettings:
         self.sound_volume = 1.0
         self.mouse_sensitivity = 0.5
         self.invert_mouse = False
+        self.smooth_mouse = False
         self.render_distance = 1
         self.view_bobbing = True
         self.anaglyph = False
         self.limit_framerate = False
         self.difficulty = 2
         self.fancy_graphics = True
+        self.smooth_lighting = True
         self.texture_pack = "vanilla"
         self.username = "Player"
         self.username_set = False
@@ -221,6 +224,7 @@ class GameSettings:
             Option("limit_framerate", "Limit framerate"),
             Option("fancy_graphics", "Graphics"),
             Option("difficulty", "Difficulty", self.DIFFICULTIES),
+            Option("smooth_lighting", "Smooth lighting"),
         ]
 
         self.load()

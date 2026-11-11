@@ -17,7 +17,7 @@
 | Hide HUD / front-facing third person | F1                  |
 | Toggle debug overlay + lagometer     | F3                  |
 | Toggle third person                  | F5                  |
-| Start performance recording          | F8                  |
+| Start performance recording          | Alt + F3            |
 
 Control rebinding is keyboard/mouse-based. Other gameplay and graphics options
 are available in **Options**; when mods expose settings, **Mod settings...** is added.

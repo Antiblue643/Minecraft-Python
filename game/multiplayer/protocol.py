@@ -8,7 +8,7 @@ import re
 import zlib
 from typing import Any, Optional
 
-PROTO_VERSION = 11
+PROTO_VERSION = 13
 DEFAULT_PORT = 25565
 MAX_LINE = 512 * 1024
 MAX_PENDING_BYTES = 8 << 20
@@ -318,7 +318,7 @@ def inventory_transaction_request(
 def entity_interact_request(entity_id: int, action: str) -> dict:
     entity_id = int(entity_id)
     action = str(action or "")
-    if not 1 <= entity_id <= 2**31 - 1 or action not in {"furnace_fuel", "milk_cow", "milk_squid", "dye_sheep"}:
+    if not 1 <= entity_id <= 2**31 - 1 or action not in {"furnace_fuel", "milk_cow", "dye_sheep"}:
         raise ValueError("invalid entity interaction")
     return {"t": "entity_interact", "entity_id": entity_id, "action": action}
 
@@ -444,8 +444,9 @@ def welcome(
     operator: bool = False,
     inventory_state: Any = None,
     inventory_revision: int = 0,
-    accurate_generation: bool = True,
+    accurate_generation: bool = False,
     debug_world: bool = False,
+    occupied_beds: Optional[list] = None,
 ) -> dict:
     packet = {
         "t": "welcome",
@@ -462,6 +463,11 @@ def welcome(
         "yaw": _finite_float(yaw),
         "pitch": _finite_float(pitch),
         "players": list(players or []),
+        "occupied_beds": [
+            [int(bed[0]), int(bed[1]), int(bed[2])]
+            for bed in (occupied_beds or [])
+            if isinstance(bed, (list, tuple)) and len(bed) == 3
+        ],
     }
     if inventory_state is not None:
         packet["inventory"] = normalize_inventory_state(inventory_state)
@@ -507,6 +513,26 @@ def normalize_player_effect_state(data: Any) -> dict:
         sneaking = bool(data.get("sneaking", False))
     except Exception:
         sneaking = False
+    try:
+        sleeping = bool(data.get("sleeping", False))
+    except Exception:
+        sleeping = False
+    bed_location = None
+    raw_bed = data.get("bed_location")
+    if isinstance(raw_bed, (list, tuple)) and len(raw_bed) == 3:
+        try:
+            bx, by, bz = (int(value) for value in raw_bed)
+            if (-30_000_000 <= bx <= 30_000_000
+                    and 0 <= by < 256
+                    and -30_000_000 <= bz <= 30_000_000):
+                bed_location = [bx, by, bz]
+        except (TypeError, ValueError, OverflowError):
+            bed_location = None
+    sleeping = sleeping and bed_location is not None
+    try:
+        bed_meta = int(data.get("bed_meta", 0)) & 3
+    except (TypeError, ValueError, OverflowError):
+        bed_meta = 0
     return {
         "health": number("health", 20.0, 0.0, 20.0),
         "hurt_time": number("hurt_time", 0.0, 0.0, 20.0),
@@ -519,6 +545,14 @@ def normalize_player_effect_state(data: Any) -> dict:
         "limb_swing_amount": number("limb_swing_amount", 0.0, 0.0, 1.0),
         "riding": riding,
         "sneaking": sneaking,
+        "sleeping": sleeping,
+        "sleep_timer": int(number("sleep_timer", 0.0, 0.0, 110.0)),
+        "ticks_existed": int(number("ticks_existed", 0.0, 0.0, 2_147_483_647.0)),
+        "bed_location": bed_location,
+        "bed_meta": bed_meta,
+        "pre_sleep_yaw": number("pre_sleep_yaw", 0.0, -3600.0, 3600.0),
+        "pre_sleep_pitch": number("pre_sleep_pitch", 0.0, -90.0, 90.0),
+        "pre_sleep_body_yaw": number("pre_sleep_body_yaw", 0.0, -3600.0, 3600.0),
     }
 
 

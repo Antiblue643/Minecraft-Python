@@ -454,6 +454,7 @@ class AlphaTerrainGenerator:
         bedrock_id = ids["bedrock"]
         grass_id, dirt_id = ids["grass_block"], ids["dirt"]
         sand_id, gravel_id = ids["sand"], ids["gravel"]
+        sandstone_id = int(ids.get("sandstone", 0) or 0)
         stone_id, water_id = ids["stone"], ids["water"]
         biome_top = [grass_id] * 256
         biome_filler = [dirt_id] * 256
@@ -476,7 +477,7 @@ class AlphaTerrainGenerator:
                 _np.asarray(biome_top, dtype=_np.int64),
                 _np.asarray(biome_filler, dtype=_np.int64),
                 bedrock_id, sand_id, gravel_id, stone_id, water_id,
-                chunk_seed,
+                sandstone_id, chunk_seed,
             )
             return
 
@@ -518,6 +519,10 @@ class AlphaTerrainGenerator:
                             elif remaining > 0:
                                 remaining -= 1
                                 data[index] = filler_id
+                                if (remaining == 0 and filler_id == sand_id
+                                        and sandstone_id):
+                                    remaining = self.rand.next_int(4)
+                                    filler_id = sandstone_id
 
     def _generate_caves_numba(self, cx: int, cz: int, data: bytearray,
                               ids: dict[str, int]) -> None:
@@ -805,6 +810,7 @@ class AlphaTerrainGenerator:
         ids = {name: int(block_type_to_id[name]) for name in needed}
         ids["lava"] = int(block_type_to_id.get("lava", 0))
         ids["ice"] = int(block_type_to_id.get("ice", 0) or 0)
+        ids["sandstone"] = int(block_type_to_id.get("sandstone", 0) or 0)
         data = bytearray(16 * 16 * 128)
         chunk_seed = _signed64(cx * 341873128712 + cz * 132897987541)
         self.rand.set_seed(chunk_seed)
@@ -896,7 +902,10 @@ class AlphaTerrainGenerator:
     def _population_get(self, world, x: int, y: int, z: int):
         if y < 0 or y >= 128:
             return None
-        cx, cz = math.floor(x / 16), math.floor(z / 16)
+        x = int(x)
+        y = int(y)
+        z = int(z)
+        cx, cz = x >> 4, z >> 4
         chunk = world.chunks.get((cx, cz))
         if chunk is not None:
             return chunk.get_block_type(x, y, z)
@@ -948,18 +957,22 @@ class AlphaTerrainGenerator:
     ) -> None:
         if y < 0 or y >= 128:
             return
-        cx, cz = math.floor(x / 16), math.floor(z / 16)
-        value = (block_type, int(meta) & 15) if (int(meta) & 15) else block_type
-        world._worldgen_block_overrides.setdefault((cx, cz), {})[(x, y, z)] = value
-        chunk = world.chunks.get((cx, cz))
-        if chunk is None:
-            return
-        was_generating = world._placing_generated_features
-        world._placing_generated_features = True
-        try:
-            world.set_block(x, y, z, block_type, meta=int(meta) & 15)
-        finally:
-            world._placing_generated_features = was_generating
+        x = int(x)
+        y = int(y)
+        z = int(z)
+        cx, cz = x >> 4, z >> 4
+        meta = int(meta) & 15
+        value = (block_type, meta) if meta else block_type
+        overrides = world._worldgen_block_overrides
+        key = (cx, cz)
+        bucket = overrides.get(key)
+        if bucket is None:
+            bucket = {}
+            overrides[key] = bucket
+        bucket[(x, y, z)] = value
+        set_block = getattr(world, "set_block", None)
+        if set_block is not None:
+            set_block(x, y, z, block_type, meta=meta)
 
     def _population_height_value(self, world, x: int, z: int) -> int:
         for y in range(127, -1, -1):
@@ -971,7 +984,9 @@ class AlphaTerrainGenerator:
         return 0
 
     def _population_heightmap_value(self, world, x: int, z: int) -> int:
-        cx, cz = math.floor(x / 16), math.floor(z / 16)
+        x = int(x)
+        z = int(z)
+        cx, cz = x >> 4, z >> 4
         chunk = world.chunks.get((cx, cz))
         if chunk is not None:
             getter = getattr(chunk, "get_height_value", None)
@@ -1145,6 +1160,15 @@ class AlphaTerrainGenerator:
     ) -> bool:
         from game.block.material import material_for_block
 
+        material_cache = {}
+        def _material(block_type):
+            try:
+                return material_cache[block_type]
+            except KeyError:
+                value = material_for_block(block_type)
+                material_cache[block_type] = value
+                return value
+
         x -= 8
         z -= 8
         while y > 0 and self._population_get(world, x, y, z) is None:
@@ -1187,7 +1211,7 @@ class AlphaTerrainGenerator:
                     if not adjacent:
                         continue
                     block = self._population_get(world, x + lx, y + ly, z + lz)
-                    material = material_for_block(block)
+                    material = _material(block)
                     if ly >= 4:
                         if material.is_liquid:
                             return False
@@ -1249,7 +1273,7 @@ class AlphaTerrainGenerator:
                         px, py, pz = x + lx, y + ly, z + lz
                         block = self._population_get(world, px, py, pz)
                         blocks_movement = (
-                            material_for_block(block).is_solid
+                            _material(block).is_solid
                             and block not in _LAKE_NONBLOCKING_LEGACY_BLOCKS
                         )
                         if blocks_movement:

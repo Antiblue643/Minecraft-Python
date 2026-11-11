@@ -65,9 +65,9 @@ class GamePerformanceMixin:
             message = f"Performance log saved: {path}"
             print(message)
             from game.localization import translate
-            self._performance_log_status = translate(
+            self.add_chat_message(translate(
                 "mcpy.performance.saved", Path(path).name if path else "(unknown)",
-            )
+            ))
         else:
             metadata = {}
             if self.world is not None:
@@ -103,10 +103,9 @@ class GamePerformanceMixin:
                 message = f"Could not start performance log: {exc}"
                 print(message)
                 from game.localization import translate
-                self._performance_log_status = translate(
+                self.add_chat_message(translate(
                     "mcpy.performance.startFailed",
-                )
-                self._performance_log_status_until = time.monotonic() + 5.0
+                ))
                 return
             if self.world is not None:
                 self.world.profiler.set_event_sink(self.performance_log)
@@ -118,11 +117,10 @@ class GamePerformanceMixin:
                 if self.world is not None:
                     gpu_profiler.report_diagnostics(self.world.profiler, final=False)
             self._set_gc_profile_enabled(True)
-            message = f"Performance log recording: {path} (press F8 to stop)"
+            message = f"Performance log recording: {path} (Alt+F3 to stop)"
             print(message)
             from game.localization import translate
-            self._performance_log_status = translate(
+            self.add_chat_message(translate(
                 "mcpy.performance.recording", Path(path).name,
-            )
-        self._performance_log_status_until = time.monotonic() + 5.0
+            ))
 

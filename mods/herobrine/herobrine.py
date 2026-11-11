@@ -132,7 +132,7 @@ def _is_solid(definitions, block_type) -> bool:
     if block_type is None or block_type in _NON_SOLID:
         return False
     definition = definitions.get(block_type, {})
-    return bool(definition.get("collision", not definition.get("intangible", False)))
+    return bool(definition.get("collision", True))
 
 
 def _can_see_sky(world, x, y, z) -> bool:

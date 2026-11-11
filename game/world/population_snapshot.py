@@ -84,9 +84,12 @@ class PopulationWorldSnapshot:
         self._generated_spawner_mobs = {}
 
     def _chunk_index(self, x, z):
-        import math
-        return (math.floor((int(x) + 0.5) / self.CHUNK_SIZE),
-                math.floor((int(z) + 0.5) / self.CHUNK_SIZE))
+        size = self.CHUNK_SIZE
+        x = int(x)
+        z = int(z)
+        if size == 16:
+            return (x >> 4, z >> 4)
+        return (x // size, z // size)
 
     def get_block_type(self, x, y, z):
         if y < 0 or y >= self.CHUNK_HEIGHT:
@@ -127,11 +130,15 @@ class PopulationWorldSnapshot:
     def set_block(self, x, y, z, block_type, meta=0, immediate_mesh=False):
         if y < 0 or y >= self.CHUNK_HEIGHT:
             return
+        x = int(x)
+        y = int(y)
+        z = int(z)
         if block_type is not None and not isinstance(block_type, str):
             block_type = getattr(block_type, "block_type", str(block_type))
-        self._writes[(x, y, z)] = block_type
-        cx = x // self.CHUNK_SIZE
-        cz = z // self.CHUNK_SIZE
+        meta = int(meta) & 15
+        self._writes[(x, y, z)] = (block_type, meta) if meta else block_type
+        size = self.CHUNK_SIZE
+        cx, cz = (x >> 4, z >> 4) if size == 16 else (x // size, z // size)
         chunk = self.chunks.get((cx, cz))
         if chunk is not None:
             chunk.set_block_type(x, y, z, block_type, self._ensure_block_type_id)

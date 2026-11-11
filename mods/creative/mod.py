@@ -63,7 +63,7 @@ _B12_SUPPORTED_CREATIVE_VARIANTS = {
     6: frozenset((0,)),
     17: frozenset((0, 1, 2)),
     35: frozenset(range(16)),
-    44: frozenset((0,)),
+    44: frozenset(range(4)),
 }
 _B12_CORE_BLOCK_IDS = frozenset({
     1, 2, 3, 4, 5, 6, 7, 9, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
@@ -275,6 +275,33 @@ def _player_inside_opaque_block(original):
     return wrapped
 
 
+def _player_can_be_collided_with(original):
+    @functools.wraps(original)
+    def wrapped(player):
+        if getattr(player, "_creative_noclip_active", False):
+            return False
+        return original(player)
+    return wrapped
+
+
+def _player_can_be_pushed(original):
+    @functools.wraps(original)
+    def wrapped(player):
+        if getattr(player, "_creative_noclip_active", False):
+            return False
+        return original(player)
+    return wrapped
+
+
+def _apply_entity_collisions(original):
+    @functools.wraps(original)
+    def wrapped(entity):
+        if getattr(entity, "_creative_noclip_active", False):
+            return
+        return original(entity)
+    return wrapped
+
+
 def _creative_items():
     from game.block import Block
     from game.entities.item import Item, ItemStack
@@ -311,9 +338,55 @@ def _creative_items():
     for _item_id, key in item_entries:
         entries.append(ItemStack(key, 1))
 
+    mod_block_defs = getattr(Item, "block_defs", {}) or {}
+    existing_block_keys = {
+        stack.id for stack in entries if stack.id in mod_block_defs
+    }
+    mod_block_entries = sorted(
+        (
+            (int(definition.get("id", 10**9)), key)
+            for key, definition in mod_block_defs.items()
+            if isinstance(definition, dict)
+            and definition.get("mod_id")
+            and definition.get("blockitem")
+            and key not in existing_block_keys
+        ),
+        key=lambda pair: pair[0],
+    )
+    for _block_id, key in mod_block_entries:
+        entries.append(ItemStack(key, 1))
+
     if any(key == "dye" for _item_id, key in item_entries):
         entries.extend(ItemStack("dye", 1, damage) for damage in range(1, 16))
     return entries
+
+
+def _creative_catalog_pages():
+    from game.entities.item import Item
+
+    all_items = _creative_items()
+    vanilla_items = []
+    mod_items = {}
+    for stack in all_items:
+        mod_id = Item.definition(stack.id).get("mod_id")
+        if mod_id:
+            mod_items.setdefault(str(mod_id), []).append(stack)
+        else:
+            vanilla_items.append(stack)
+
+    all_label = translate_mod("creative", "screen.itemSelection")
+    pages = [{
+        "id": "Minecraft",
+        "label": translate_mod("creative", "screen.page.minecraft", default=all_label),
+        "items": vanilla_items,
+    }]
+    for mod_id in sorted(mod_items, key=str.casefold):
+        pages.append({
+            "id": mod_id,
+            "label": translate_mod(mod_id, "mod.name", default=mod_id.replace("_", " ").title()),
+            "items": mod_items[mod_id],
+        })
+    return pages
 
 
 def _metadata_block_faces(stack, base_definition):
@@ -336,7 +409,10 @@ def _metadata_block_faces(stack, base_definition):
         base_tile = 52 if bool(getattr(Block, "_fancy_graphics", True)) else 53
         definition["faces"] = base_tile + (80 if (damage & 3) == 1 else 0)
     elif item_id == "stone_slab":
-        return None
+        variants = base_definition.get("metaFaces") or {}
+        found = variants.get(str(damage & 3))
+        if found is not None:
+            definition["faces"] = found
     else:
         return None
     return definition
@@ -366,6 +442,19 @@ class _CatalogInventory:
             self.items[slot] = stack
 
 
+
+
+def _preserve_legacy_gl_state(draw_method):
+    @functools.wraps(draw_method)
+    def wrapped(self, *args, **kwargs):
+        from OpenGL.GL import GL_ALL_ATTRIB_BITS, glPopAttrib, glPushAttrib
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        try:
+            return draw_method(self, *args, **kwargs)
+        finally:
+            glPopAttrib()
+    return wrapped
+
 class CreativeInventoryScreen:
 
     COLUMNS = 8
@@ -387,6 +476,8 @@ class CreativeInventoryScreen:
         self.height = 0
         self.controls = []
         self.items = []
+        self.pages = []
+        self.page_index = 0
         self.scroll_row = 0
         self._scroll_dragging = False
         self.catalog_inventory = _CatalogInventory()
@@ -399,7 +490,9 @@ class CreativeInventoryScreen:
         from game.gameplay.screens import Slot
 
         self.mc, self.width, self.height = mc, width, height
-        self.items = _creative_items()
+        self.pages = _creative_catalog_pages()
+        self.page_index = 0
+        self.items = self.pages[0]["items"] if self.pages else []
         self.scroll_row = 0
         self._scroll_dragging = False
         self.dragged = None
@@ -421,6 +514,34 @@ class CreativeInventoryScreen:
             surface = pg.image.load(str(asset_path)).convert_alpha()
             _ALL_ITEMS_TEXTURE = Texture(surface)
         self._populate_catalog_slots()
+
+    def _set_page(self, page_index):
+        if not self.pages:
+            return
+        self.page_index = max(0, min(len(self.pages) - 1, int(page_index)))
+        self.items = self.pages[self.page_index]["items"]
+        self.scroll_row = 0
+        self._populate_catalog_slots()
+
+    def _page_label(self):
+        if not self.pages:
+            return translate_mod("creative", "screen.page.all", default="All")
+        return str(self.pages[self.page_index].get("label", "All"))
+
+    def _survival_inventory_bounds(self):
+        left, top = self._panel_origin()
+        return left + self.PANEL_WIDTH + 8, top + 4, left + self.PANEL_WIDTH + 32, top + 28
+
+    def _inventory_button_bounds(self):
+        return self._survival_inventory_bounds()
+
+    def _open_survival_inventory(self):
+        player = getattr(self.mc, "player", None)
+        if player is None:
+            return False
+        from game.gameplay.screens import GuiInventory
+        self.mc.display_gui_screen(GuiInventory(player))
+        return True
 
     def _populate_catalog_slots(self):
         first = self.scroll_row * self.COLUMNS
@@ -500,10 +621,14 @@ class CreativeInventoryScreen:
 
     def navigation_targets(self):
         left, top = self._panel_origin()
-        return [
+        targets = [
             (left + slot.x + 8.0, top + slot.y + 8.0)
             for slot in self.slots
         ]
+        chest_left, chest_top, chest_right, chest_bottom = self._survival_inventory_bounds()
+        targets.append(((chest_left + chest_right) / 2.0,
+                        (chest_top + chest_bottom) / 2.0))
+        return targets
 
     @staticmethod
     def _same_stack(first, second):
@@ -543,6 +668,17 @@ class CreativeInventoryScreen:
 
     def mouse_clicked(self, x, y, button):
         left, top = self._panel_origin()
+        if button == 1:
+            bx1, by1, bx2, by2 = self._survival_inventory_bounds()
+            if bx1 <= x < bx2 and by1 <= y < by2:
+                self._open_survival_inventory()
+                return
+            if len(self.pages) > 1 and left <= x < left + 20 and top <= y < top + 18:
+                self._set_page((self.page_index - 1) % len(self.pages))
+                return
+            if len(self.pages) > 1 and left + self.PANEL_WIDTH - 20 <= x < left + self.PANEL_WIDTH and top <= y < top + 18:
+                self._set_page((self.page_index + 1) % len(self.pages))
+                return
         if button in (4, 5):
             if left <= x < left + self.PANEL_WIDTH and top <= y < top + self.PANEL_HEIGHT:
                 self._scroll_by(-1 if button == 4 else 1)
@@ -610,6 +746,7 @@ class CreativeInventoryScreen:
         Item.block_defs[proxy_id] = variant
         proxy_stack = SimpleNamespace(
             id=proxy_id, count=stack.count, damage=stack.damage,
+            tint_item_id=stack.id,
             animations_to_go=getattr(stack, "animations_to_go", 0),
         )
         x, y = left + slot.x, top + slot.y
@@ -619,6 +756,7 @@ class CreativeInventoryScreen:
             Item.block_defs.pop(proxy_id, None)
         _draw_stack_count(self.mc.display, stack, x, y)
 
+    @_preserve_legacy_gl_state
     def draw_screen(self, mx, my):
         from OpenGL.GL import (
             GL_BLEND, GL_ONE_MINUS_SRC_ALPHA, GL_QUADS, GL_SRC_ALPHA,
@@ -649,6 +787,29 @@ class CreativeInventoryScreen:
                     glVertex2f(left + slot.x, top + slot.y + 16)
                     glEnd()
                     glColor4f(1.0, 1.0, 1.0, 1.0)
+
+            chest_left, chest_top, chest_right, chest_bottom = self._survival_inventory_bounds()
+            chest_hovered = (
+                chest_left <= mx < chest_right and chest_top <= my < chest_bottom
+            )
+            if chest_hovered:
+                glDisable(GL_TEXTURE_2D)
+                glEnable(GL_BLEND)
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+                glColor4f(1.0, 1.0, 1.0, 0.32)
+                glBegin(GL_QUADS)
+                glVertex2f(chest_left, chest_top)
+                glVertex2f(chest_right, chest_top)
+                glVertex2f(chest_right, chest_bottom)
+                glVertex2f(chest_left, chest_bottom)
+                glEnd()
+                glColor4f(1.0, 1.0, 1.0, 1.0)
+                glEnable(GL_TEXTURE_2D)
+            from game.entities.item import ItemStack
+            self.mc.gui._draw_item_icon(
+                ItemStack("chest", 1), chest_left + 4, chest_top + 4, 16,
+            )
+
             thumb_travel = self.SCROLL_HEIGHT - self.SCROLL_THUMB_HEIGHT - 1
             max_rows = self._max_scroll_rows()
             fraction = self.scroll_row / max_rows if max_rows else 0.0
@@ -662,11 +823,15 @@ class CreativeInventoryScreen:
         glDisable(GL_DEPTH_TEST)
         glDisable(GL_LIGHTING)
         try:
-            from game.localization import translate_mod
+            page_label = self._page_label()
             draw_string(
-                self.mc.display, translate_mod("creative", "screen.itemSelection"),
-                left + 8, top + 6, 0x404040, shadow=False,
+                self.mc.display, page_label,
+                left + (self.PANEL_WIDTH - self.mc.display.string_width(page_label)) // 2,
+                top + 6, 0x404040, shadow=False,
             )
+            if len(self.pages) > 1:
+                draw_string(self.mc.display, "<", left + 6, top + 6, 0x404040, shadow=False)
+                draw_string(self.mc.display, ">", left + self.PANEL_WIDTH - 13, top + 6, 0x404040, shadow=False)
 
             if self.dragged is not None:
                 cursor_left, cursor_top = mx - 8, my - 8
@@ -786,6 +951,30 @@ def _install_controller_button_hook():
         return False
 
 
+def _wrap_game_start_world(original_start_world):
+    @functools.wraps(original_start_world)
+    def start_world(mc, world_name="World1", *, display_name=None, seed=None,
+                    debug_world=False, accurate_generation=None, creative_mode=False):
+        current_screen = getattr(mc, "current_screen", None)
+        if current_screen is not None and current_screen.__class__.__name__ == "GuiCreateWorld":
+            creative_mode = bool(getattr(current_screen, "creative_mode", creative_mode))
+        result = original_start_world(
+            mc, world_name, display_name=display_name, seed=seed,
+            debug_world=debug_world,
+            accurate_generation=accurate_generation,
+        )
+        if creative_mode and getattr(mc, "player", None) is not None:
+            mc.player.gamemode = 1
+            save_store = getattr(getattr(mc, "world", None), "save_store", None)
+            save_level = getattr(save_store, "save_level", None)
+            if callable(save_level):
+                save_level(mc.world, mc.player)
+        if getattr(mc, "player", None) is not None:
+            mc.player._creative_mod_active = int(getattr(mc.player, "gamemode", 0)) == 1
+        return result
+    return start_world
+
+
 def _install_hooks(game):
     global _INSTALLED
     if _INSTALLED:
@@ -797,8 +986,7 @@ def _install_hooks(game):
     from game.app.input import GameInputMixin
     from game.world import World
     from game.gameplay.screens import (
-        GuiSelectWorld, GuiButton, GuiGeneratedModSettings,
-        draw_centered_string,
+        GuiSelectWorld, GuiCreateWorld, GuiButton, GuiGeneratedModSettings,
     )
     from game.entities import player_model
 
@@ -814,6 +1002,12 @@ def _install_hooks(game):
     GameLoopMixin._update = _game_loop_update(GameLoopMixin._update)
     _ORIGINALS["player_inside_opaque_block"] = Player._inside_opaque_block
     Player._inside_opaque_block = _player_inside_opaque_block(Player._inside_opaque_block)
+    _ORIGINALS["player_can_be_collided_with"] = Player.can_be_collided_with
+    Player.can_be_collided_with = _player_can_be_collided_with(Player.can_be_collided_with)
+    _ORIGINALS["player_can_be_pushed"] = Player.can_be_pushed
+    Player.can_be_pushed = _player_can_be_pushed(Player.can_be_pushed)
+    _ORIGINALS["apply_entity_collisions"] = Entity._apply_entity_collisions
+    Entity._apply_entity_collisions = _apply_entity_collisions(Entity._apply_entity_collisions)
     _ORIGINALS["entity_move"] = Entity.move
     Entity.move = _entity_move(Entity.move)
     _ORIGINALS["inside_block_overlay"] = player_model.inside_opaque_block_texture
@@ -840,33 +1034,7 @@ def _install_hooks(game):
     GuiGeneratedModSettings._position_controls = position_mod_controls
 
     _ORIGINALS["game_start_world"] = Game.start_world
-    original_start_world = Game.start_world
-
-    @functools.wraps(original_start_world)
-    def start_world(mc, world_name="World1", *, debug_world=False,
-                    accurate_generation=None, creative_mode=False):
-        result = original_start_world(
-            mc, world_name, debug_world=debug_world,
-            accurate_generation=accurate_generation,
-        )
-        if creative_mode and getattr(mc, "player", None) is not None:
-            mc.player.gamemode = 1
-            save_store = getattr(getattr(mc, "world", None), "save_store", None)
-            save_level = getattr(save_store, "save_level", None)
-            if callable(save_level):
-                save_level(mc.world, mc.player)
-        if getattr(mc, "player", None) is not None:
-            mc.player._creative_mod_active = int(getattr(mc.player, "gamemode", 0)) == 1
-        _debug_tools().on_world_started(
-            mc, getattr(mc, "world", None),
-            int(getattr(getattr(mc, "player", None), "gamemode", 0)) == 1,
-        )
-        return result
-
-    Game.start_world = start_world
-
-    _ORIGINALS["celestial_angle"] = World.get_celestial_angle
-    World.get_celestial_angle = _debug_tools().wrap_celestial_angle(World.get_celestial_angle)
+    Game.start_world = _wrap_game_start_world(Game.start_world)
 
     _ORIGINALS["game_key"] = GameInputMixin._game_key
     original_game_key = GameInputMixin._game_key
@@ -877,6 +1045,8 @@ def _install_hooks(game):
         inventory_binding = getattr(mc.settings, "key_inventory", None)
         inventory_key = inventory_binding.key if inventory_binding else pg.K_e
         if event.key == inventory_key and _creative_active(player):
+            player.stop_digging()
+            player.stop_using_item()
             mc.display_gui_screen(CreativeInventoryScreen())
             return
         if _creative_active(player) and _debug_tools().handle_key(mc, event):
@@ -936,48 +1106,51 @@ def _install_hooks(game):
     def select_init(screen):
         original_select_init(screen)
         screen.creative_mode = bool(getattr(screen, "creative_mode", False))
+
+    GuiSelectWorld.init_gui = select_init
+
+    _ORIGINALS["create_world_init"] = GuiCreateWorld.init_gui
+    original_create_init = GuiCreateWorld.init_gui
+
+    @functools.wraps(original_create_init)
+    def create_world_init(screen):
+        original_create_init(screen)
+        screen.creative_mode = bool(getattr(screen.parent, "creative_mode", False))
+        mode_rect = getattr(screen, "create_layout", {}).get(
+            "mode_rect",
+            (screen.width // 2 - 100, screen.height // 4 + 180, 200, 20),
+        )
         screen.controls.append(GuiButton(
-            8, screen.width - 152, 8,
+            9, *mode_rect[:2],
             translate_mod(
                 "creative", "worldSelect.gamemodeCreative" if screen.creative_mode else "worldSelect.gamemodeSurvival",
             ),
-            144,
+            mode_rect[2], mode_rect[3],
         ))
 
-    GuiSelectWorld.init_gui = select_init
-    _ORIGINALS["world_select_draw"] = GuiSelectWorld.draw_screen
-    original_select_draw = GuiSelectWorld.draw_screen
+    GuiCreateWorld.init_gui = create_world_init
+    _ORIGINALS["create_world_action"] = GuiCreateWorld.action_performed
+    original_create_action = GuiCreateWorld.action_performed
 
-    @functools.wraps(original_select_draw)
-    def select_draw(screen, mx, my):
-        result = original_select_draw(screen, mx, my)
-        mode_button = next(
-            (control for control in screen.controls if control.id == 8),
-            None,
-        )
-        if mode_button is not None:
-            draw_centered_string(
-                screen.mc.display,
-                translate_mod("creative", "worldSelect.newWorlds"),
-                mode_button.x + mode_button.width // 2,
-                mode_button.y + mode_button.height + 2,
-                0xA0A0A0,
-            )
-        return result
-
-    GuiSelectWorld.draw_screen = select_draw
-    _ORIGINALS["world_select_action"] = GuiSelectWorld.action_performed
-    original_select_action = GuiSelectWorld.action_performed
-
-    def select_action(screen, button):
-        if button.id == 8:
+    @functools.wraps(original_create_action)
+    def create_world_action(screen, button):
+        if button.id == 9:
             screen.creative_mode = not screen.creative_mode
-            from game.localization import translate_mod
+            if getattr(screen, "parent", None) is not None:
+                screen.parent.creative_mode = screen.creative_mode
             button.text = translate_mod(
                 "creative", "worldSelect.gamemodeCreative" if screen.creative_mode else "worldSelect.gamemodeSurvival",
             )
             return
-        if 0 <= button.id < 5:
+        return original_create_action(screen, button)
+
+    GuiCreateWorld.action_performed = create_world_action
+
+    _ORIGINALS["world_select_action"] = GuiSelectWorld.action_performed
+    original_select_action = GuiSelectWorld.action_performed
+
+    def select_action(screen, button):
+        if 0 <= button.id < 5 and not hasattr(screen, "entries"):
             try:
                 screen.error_text = None
                 world_name = f"World{button.id + 1}"
@@ -1015,7 +1188,6 @@ def initialize(game):
 def on_world_tick(game, world, player, dt):
     if "controller_button" not in _ORIGINALS:
         _install_controller_button_hook()
-    _debug_tools().update(game, world, player, dt)
     if player is None:
         return
     if int(getattr(player, "gamemode", 0)) == 1:

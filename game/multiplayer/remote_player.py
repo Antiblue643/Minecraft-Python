@@ -237,12 +237,20 @@ class RemotePlayer(Entity):
         self._fire_ticks = 0
         self.riding_entity = None
         self.is_sneaking = False
+        self.is_sleeping = False
+        self.sleep_timer = 0
+        self.bed_location = None
+        self._bed_sleep_meta = None
+        self._pre_sleep_yaw = None
+        self._pre_sleep_pitch = None
+        self._pre_sleep_body_yaw = None
         self.ticks_existed = 0
         self._target_pos = list(self.pos)
         self._target_yaw = self.yaw
         self._target_pitch = self.pitch
         self._animation_tick_accum = 0.0
         self._animation_distance_accum = 0.0
+        self._sleep_tick_accum = 0.0
         self.renderer = Entity.renderer
         self.world = Entity.world
         self.inventory = RemoteInventory()
@@ -265,6 +273,54 @@ class RemotePlayer(Entity):
 
     def can_be_pushed(self) -> bool:
         return self.can_be_collided_with()
+
+    def is_player_sleeping(self) -> bool:
+        return bool(self.is_sleeping)
+
+    def is_player_fully_asleep(self) -> bool:
+        return self.is_player_sleeping() and int(self.sleep_timer) >= 100
+
+    def wake_up_player(self, reset_timer: bool = True, update_world_flag: bool = True) -> None:
+        world = getattr(self, "world", None) or Entity.world
+        bed = self.bed_location
+        if world is not None and bed is not None:
+            bx, by, bz = (int(value) for value in bed)
+            if world.get_block_type(bx, by, bz) == "bed":
+                from game.block.bed import bed_set_occupied, bed_exit_position
+                meta = int(world.get_metadata(bx, by, bz)) & 15
+                bed_set_occupied(world, bx, by, bz, False)
+                self.pos[:] = bed_exit_position(world, bx, by, bz, meta)
+                self._target_pos = list(self.pos)
+                self.prev_pos[:] = self.pos
+        self.is_sleeping = False
+        self.sleep_timer = 0 if reset_timer else 100
+        self.bed_location = None
+        self._bed_sleep_meta = None
+        self.size = (0.6, 1.8, 0.6)
+        if self._pre_sleep_yaw is not None:
+            self.yaw = self.prev_yaw = self._target_yaw = float(self._pre_sleep_yaw)
+        if self._pre_sleep_pitch is not None:
+            self.pitch = self.prev_pitch = self._target_pitch = float(self._pre_sleep_pitch)
+        if self._pre_sleep_body_yaw is not None:
+            self.render_yaw_offset = self.prev_render_yaw_offset = float(
+                self._pre_sleep_body_yaw
+            )
+            self._target_body_yaw = self.render_yaw_offset
+        self._pre_sleep_yaw = self._pre_sleep_pitch = self._pre_sleep_body_yaw = None
+        self._sleep_tick_accum = 0.0
+        self._animation_tick_accum = 0.0
+        self._animation_distance_accum = 0.0
+        self.vel[:] = [0.0, 0.0, 0.0]
+        self.prev_limb_swing_amount = self.limb_swing_amount = 0.0
+        self.prev_limb_swing = self.limb_swing = 0.0
+        self._target_limb_swing_amount = self._target_limb_swing = 0.0
+        self._is_swing_in_progress = False
+        self._swing_progress_int = 0
+        self.prev_swing_progress = self.swing_progress = 0.0
+        if update_world_flag and world is not None:
+            updater = getattr(world, "update_all_players_sleeping_flag", None)
+            if callable(updater):
+                updater()
 
     def get_interaction_bounds(self):
         width, height, depth = self.size
@@ -339,6 +395,31 @@ class RemotePlayer(Entity):
 
     def tick_interpolate(self, dt: float) -> None:
         dt = min(0.25, max(0.0, float(dt)))
+        if self.is_sleeping:
+            self.prev_pos[:] = self.pos
+            self.pos[:] = self._target_pos
+            self.prev_yaw = self.yaw = self._target_yaw
+            self.prev_pitch = self.pitch = self._target_pitch
+            self.prev_render_yaw_offset = self.render_yaw_offset
+            self.render_yaw_offset = self._target_body_yaw
+            advance_cape_motion(self, dt)
+            self._sleep_tick_accum += dt
+            ticks = min(int(self._sleep_tick_accum / 0.05), 4)
+            if ticks > 0:
+                self._sleep_tick_accum -= ticks * 0.05
+                self.ticks_existed += ticks
+                self.sleep_timer = min(100, int(self.sleep_timer) + ticks)
+            self._animation_tick_accum = 0.0
+            self._animation_distance_accum = 0.0
+            self.prev_limb_swing_amount = self.limb_swing_amount = 0.0
+            self.prev_limb_swing = self.limb_swing = 0.0
+            self._target_limb_swing_amount = self._target_limb_swing = 0.0
+            self._is_swing_in_progress = False
+            self._swing_progress_int = 0
+            self.prev_swing_progress = self.swing_progress = 0.0
+            return
+
+        self._sleep_tick_accum = 0.0
         old_x, old_z = float(self.pos[0]), float(self.pos[2])
         self.prev_pos[:] = self.pos
         a = min(1.0, dt * 12.0)
@@ -364,8 +445,8 @@ class RemotePlayer(Entity):
         ticks = min(int(self._animation_tick_accum / 0.05), 4)
         if ticks <= 0:
             return
-        target_amount = max(0.0, min(1.0, float(self._target_limb_swing_amount)))
         period = (2.0 * math.pi) / 0.6662
+        target_amount = max(0.0, min(1.0, float(self._target_limb_swing_amount)))
         for _ in range(ticks):
             self._animation_tick_accum -= 0.05
             self.prev_limb_swing_amount = self.limb_swing_amount
@@ -381,26 +462,97 @@ class RemotePlayer(Entity):
         from game.multiplayer import protocol as P
 
         normalized = P.normalize_player_effect_state(state)
+        was_sleeping = bool(self.is_sleeping)
+        is_sleeping = bool(normalized.get("sleeping", False))
+        if is_sleeping and not was_sleeping:
+            self._pre_sleep_yaw = float(normalized.get("pre_sleep_yaw", self.yaw))
+            self._pre_sleep_pitch = float(normalized.get("pre_sleep_pitch", self.pitch))
+            self._pre_sleep_body_yaw = float(
+                normalized.get("pre_sleep_body_yaw", normalized.get("body_yaw", self.render_yaw_offset))
+            )
+            self.ticks_existed = int(normalized.get("ticks_existed", self.ticks_existed))
+            self._sleep_tick_accum = 0.0
+        self.is_sleeping = is_sleeping
+        incoming_sleep_timer = int(normalized.get("sleep_timer", 0))
+        self.sleep_timer = (
+            max(int(self.sleep_timer), incoming_sleep_timer)
+            if is_sleeping and was_sleeping else incoming_sleep_timer
+        )
+        raw_bed = normalized.get("bed_location")
+        self.bed_location = tuple(raw_bed) if is_sleeping and raw_bed is not None else None
+        self._bed_sleep_meta = int(normalized.get("bed_meta", 0)) if is_sleeping else None
         self._target_body_yaw = float(normalized["body_yaw"])
+        if is_sleeping and self._bed_sleep_meta is not None:
+            try:
+                from game.block.bed import bed_sleep_body_yaw
+                self._target_body_yaw = bed_sleep_body_yaw(self._bed_sleep_meta)
+            except Exception:
+                pass
         self._target_limb_swing = float(normalized.get("limb_swing", self._target_limb_swing))
         self._target_limb_swing_amount = float(
             normalized.get("limb_swing_amount", self._target_limb_swing_amount)
         )
+        if is_sleeping:
+            self.size = (0.2, 0.2, 0.2)
+            self._target_limb_swing_amount = 0.0
+            self._target_limb_swing = 0.0
+            self._is_swing_in_progress = False
+            self._swing_progress_int = 0
+            self.prev_swing_progress = self.swing_progress = 0.0
+            self.prev_limb_swing_amount = self.limb_swing_amount = 0.0
+            self.prev_limb_swing = self.limb_swing = 0.0
+            if not was_sleeping:
+                self.pos[:] = self._target_pos
+                self.prev_pos[:] = self.pos
+                self.yaw = self.prev_yaw = self._target_yaw
+                self.pitch = self.prev_pitch = self._target_pitch
+                self.render_yaw_offset = self.prev_render_yaw_offset = self._target_body_yaw
+                self._sleep_tick_accum = 0.0
+                self._animation_tick_accum = 0.0
+                self._animation_distance_accum = 0.0
+        elif was_sleeping:
+            self.size = (0.6, 1.8, 0.6)
+            self.ticks_existed = int(normalized.get("ticks_existed", self.ticks_existed))
+            self._sleep_tick_accum = 0.0
+            self._animation_tick_accum = 0.0
+            self._animation_distance_accum = 0.0
+            self.bed_location = None
+            self._bed_sleep_meta = None
+            self.pos[:] = self._target_pos
+            self.prev_pos[:] = self.pos
+            self.yaw = self.prev_yaw = self._target_yaw
+            self.pitch = self.prev_pitch = self._target_pitch
+            self.render_yaw_offset = self.prev_render_yaw_offset = self._target_body_yaw
+            self._pre_sleep_yaw = self._pre_sleep_pitch = self._pre_sleep_body_yaw = None
+            self.prev_limb_swing_amount = self.limb_swing_amount = 0.0
+            self.prev_limb_swing = self.limb_swing = 0.0
+            self._is_swing_in_progress = False
+            self._swing_progress_int = 0
+            self.prev_swing_progress = self.swing_progress = 0.0
         self.health = normalized["health"]
-        self.size = (0.2, 0.2, 0.2) if self.health <= 0 else (0.6, 1.8, 0.6)
+        self.size = (
+            (0.2, 0.2, 0.2)
+            if self.health <= 0.0 or is_sleeping else (0.6, 1.8, 0.6)
+        )
         self.hurt_time = normalized["hurt_time"]
         self.max_hurt_time = normalized["max_hurt_time"]
         self.death_time = normalized["death_time"]
         self._fire_ticks = normalized["fire_ticks"]
         self.attacked_at_yaw = normalized["attacked_at_yaw"]
-        self.riding_entity = _REMOTE_RIDE_POSE if normalized["riding"] else None
-        self.is_sneaking = bool(normalized.get("sneaking", False))
-        target = 0.2 if self.is_sneaking else 0.0
-        current = float(getattr(self, "render_y_offset", getattr(self, "y_size", 0.0)))
-        blend = 1.0 - 0.4
-        current += (target - current) * blend
-        self.render_y_offset = current
-        self.y_size = current
+        self.riding_entity = (
+            _REMOTE_RIDE_POSE if normalized["riding"] and not is_sleeping else None
+        )
+        self.is_sneaking = bool(normalized.get("sneaking", False)) and not is_sleeping
+        if is_sleeping:
+            self.render_y_offset = 0.0
+            self.y_size = 0.0
+        else:
+            target = 0.2 if self.is_sneaking else 0.0
+            current = float(getattr(self, "render_y_offset", getattr(self, "y_size", 0.0)))
+            blend = 1.0 - 0.4
+            current += (target - current) * blend
+            self.render_y_offset = current
+            self.y_size = current
 
     def apply_inventory_state(self, state) -> None:
         from game.multiplayer import protocol as P
@@ -446,7 +598,7 @@ class RemotePlayer(Entity):
         self.break_progress = max(0.0, min(0.99, progress))
 
     def trigger_animation(self, action: str = "swing") -> None:
-        if action == "swing":
+        if action == "swing" and not self.is_sleeping:
             self._swing_progress_int = -1
             self._is_swing_in_progress = True
 

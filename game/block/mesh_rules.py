@@ -6,7 +6,7 @@ def face_neighbor_direction(block_type, model_name, direction):
     return tuple(direction)
 
 
-PARTIAL_MODELS = frozenset({"slab", "stairs", "farmland", "redstone_wire", "snow_layer"})
+PARTIAL_MODELS = frozenset({"slab", "stairs", "farmland", "redstone_wire", "redstone_repeater", "snow_layer"})
 
 
 def quad_on_voxel_boundary(direction, vertices, epsilon=1e-6):

@@ -405,6 +405,7 @@ class MultiplayerClient:
         elif msg_type in (
             "join", "leave", "pos", "chat", "block", "tile_entity", "inventory", "anim", "break",
             "chunk", "chunk_error", "entity_sync", "player_damage", "respawn", "world_event",
-            "private_message", "command_reply", "teleport",
+            "private_message", "command_reply", "teleport", "bed_occupancy",
+            "bed_claim_result",
         ):
             self._push(msg)
